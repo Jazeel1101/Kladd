@@ -1,0 +1,9 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    // DOM is only for client.ts (renderer MessagePort). server.ts must stay structural: no electron, no node types.
+    "lib": ["ES2024", "DOM"],
+    "types": []
+  },
+  "include": ["src"]
+}

@@ -1,0 +1,9 @@
+{
+  // Root-level config files and tools/ only. Each package has its own tsconfig.
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "types": ["node"],
+    "allowImportingTsExtensions": true
+  },
+  "include": ["vite.config.ts", "tools"]
+}

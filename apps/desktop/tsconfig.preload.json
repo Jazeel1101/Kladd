@@ -1,0 +1,9 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    // Preload runs sandboxed: DOM plus the electron renderer API, no Node built-ins.
+    "lib": ["ES2024", "DOM"],
+    "types": []
+  },
+  "include": ["src/preload"]
+}

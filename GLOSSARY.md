@@ -1,0 +1,17 @@
+# Glossary
+
+Product talk (Linear) is Norwegian; code is English. Use the code name everywhere in code, and add a row before naming a new concept.
+
+| Norwegian (Linear)            | Code name                               | Meaning                                                         | In code                                    |
+| ----------------------------- | --------------------------------------- | --------------------------------------------------------------- | ------------------------------------------ |
+| logg                          | `LogEntry`                              | What the student writes about their work; Kladd's end product   | not yet                                    |
+| opptak                        | `RecordingSession`                      | One period where Kladd records what the user does               | `packages/domain/src/RecordingSession.ts`  |
+| opptaksmodus (manuell / auto) | `RecordingMode` (`"manual"` / `"auto"`) | How a recording starts; only manual is in the MVP               | not yet                                    |
+| loggemodus                    | `LoggingMode`                           | The state where the user writes a log from what was recorded    | not yet                                    |
+| overlegg                      | `Overlay`                               | A small always-on-top window over other apps; one UI route each | not yet                                    |
+| chat composer                 | `Composer`                              | The overlay input where the user talks to the LLM               | not yet                                    |
+| oppsummering                  | `Summary`                               | LLM-written summary of a recording                              | not yet                                    |
+| notat                         | `Note`                                  | A saved piece of text or image from a session                   | not yet                                    |
+| BYOK                          | `ProviderKey`                           | The user's own LLM API key; stays on the device                 | not yet                                    |
+| sensitivt innhold             | `SensitiveContent`                      | Content to keep out of recordings (auto mode, post-MVP)         | not yet                                    |
+| skjermopptak                  | `ScreenCapture`                         | The port that captures the screen, implemented per OS           | `packages/core/src/ports/ScreenCapture.ts` |

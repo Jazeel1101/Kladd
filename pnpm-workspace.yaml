@@ -1,0 +1,52 @@
+packages:
+  - apps/*
+  - packages/*
+
+# Every shared version lives here. Packages reference it with "catalog:".
+# Bumping effect means bumping all @effect/* entries together.
+catalogMode: strict
+catalog:
+  "@effect/atom-react": 4.1.5
+  "@effect/platform-node": 4.1.5
+  "@effect/tsgo": 0.67.1
+  "@effect/vitest": 4.1.5
+  "@tailwindcss/vite": ^4.3.5
+  "@tanstack/react-router": ^1.170.46
+  "@tanstack/router-plugin": ^1.169.0
+  "@types/node": ^24.19.2
+  "@types/react": ^19.3.0
+  "@types/react-dom": ^19.3.0
+  "@ui-sdk/core": 0.1.0-beta.13
+  "@ui-sdk/react": 0.1.0-beta.13
+  "@vitejs/plugin-react": ^6.3.0
+  clsx: ^2.1.1
+  dependency-cruiser: ^18.9.0
+  effect: 4.1.5
+  electron: ^44.11.5
+  electron-builder: ^26.18.0
+  # electron-updater is pinned in apps/desktop/package.json: electron-builder cannot read "catalog:".
+  knip: ^6.48.0
+  react: ^19.3.0
+  react-dom: ^19.3.0
+  sherif: ^1.13.0
+  tailwind-merge: ^3.7.1
+  tailwindcss: ^4.3.5
+  typescript: 7.1.0-beta
+  vite: npm:@voidzero-dev/vite-plus-core@1.4.0
+  vite-plus: 1.4.0
+  # Must equal the vitest version bundled by vite-plus (peer of @effect/vitest).
+  vitest: 5.0.5
+
+overrides:
+  vite@*: "catalog:"
+
+peerDependencyRules:
+  allowAny:
+    - vite
+  allowedVersions:
+    vite: "*"
+minimumReleaseAgeExclude:
+  - dependency-cruiser@18.9.0
+  - knip@6.48.0
+allowBuilds:
+  electron-winstaller: false

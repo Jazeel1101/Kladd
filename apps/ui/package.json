@@ -1,0 +1,35 @@
+{
+  "name": "@kladd/ui",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vp dev",
+    "build": "vp build",
+    "typecheck": "effect-tsgo tsc -p tsconfig.json && effect-tsgo tsc -p tsconfig.node.json"
+  },
+  "dependencies": {
+    "@effect/atom-react": "catalog:",
+    "@kladd/contract": "workspace:*",
+    "@kladd/rpc-electron": "workspace:*",
+    "@tanstack/react-router": "catalog:",
+    "@ui-sdk/core": "catalog:",
+    "@ui-sdk/react": "catalog:",
+    "clsx": "catalog:",
+    "effect": "catalog:",
+    "react": "catalog:",
+    "react-dom": "catalog:",
+    "tailwind-merge": "catalog:"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "catalog:",
+    "@tanstack/router-plugin": "catalog:",
+    "@types/node": "catalog:",
+    "@types/react": "catalog:",
+    "@types/react-dom": "catalog:",
+    "@vitejs/plugin-react": "catalog:",
+    "tailwindcss": "catalog:",
+    "vite": "catalog:",
+    "vite-plus": "catalog:"
+  }
+}

@@ -1,0 +1,8 @@
+{
+  // Build config only. App code (src) is checked by tsconfig.json without Node types.
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "types": ["node"]
+  },
+  "include": ["vite.config.ts"]
+}

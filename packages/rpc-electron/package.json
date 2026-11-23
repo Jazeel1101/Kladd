@@ -1,0 +1,17 @@
+{
+  "name": "@kladd/rpc-electron",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./client": "./src/client.ts",
+    "./server": "./src/server.ts",
+    "./channels": "./src/channels.ts"
+  },
+  "scripts": {
+    "typecheck": "effect-tsgo tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "effect": "catalog:"
+  }
+}

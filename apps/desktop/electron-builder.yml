@@ -1,0 +1,21 @@
+# Packaging + auto-update. Build with `pnpm --filter @kladd/desktop package`.
+appId: com.kladd.app # TODO: confirm the bundle id before the first signed release.
+productName: Kladd
+directories:
+  output: release
+  buildResources: build
+files:
+  - dist/**
+  - package.json
+  - from: ../ui/dist
+    to: ui
+# main/preload are fully bundled; only electron-updater is a runtime dependency.
+npmRebuild: false
+mac:
+  category: public.app-category.productivity
+  # zip is required for electron-updater on macOS.
+  target: [dmg, zip]
+publish:
+  provider: github
+  owner: Jazeel1101
+  repo: InvestorUke

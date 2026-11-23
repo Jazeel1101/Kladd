@@ -1,0 +1,14 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "ignoreDependencies": ["@effect/language-service"],
+  "workspaces": {
+    ".": {
+      "entry": ["tools/lint/*.ts"]
+    },
+    "apps/desktop": {
+      "entry": ["src/main/index.ts", "src/preload/index.ts", "scripts/*.ts"]
+    },
+    "apps/*": {},
+    "packages/*": {}
+  }
+}

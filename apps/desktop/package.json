@@ -1,0 +1,31 @@
+{
+  "name": "@kladd/desktop",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Kladd desktop app",
+  "type": "module",
+  "main": "dist/main/index.mjs",
+  "scripts": {
+    "dev": "node scripts/dev.ts",
+    "build": "vp pack",
+    "package": "vp pack && vp run @kladd/ui#build && electron-builder --config electron-builder.yml",
+    "typecheck": "effect-tsgo tsc -p tsconfig.json && effect-tsgo tsc -p tsconfig.preload.json"
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.11"
+  },
+  "devDependencies": {
+    "@effect/platform-node": "catalog:",
+    "@kladd/contract": "workspace:*",
+    "@kladd/core": "workspace:*",
+    "@kladd/infra": "workspace:*",
+    "@kladd/platform-darwin": "workspace:*",
+    "@kladd/rpc-electron": "workspace:*",
+    "@types/node": "catalog:",
+    "effect": "catalog:",
+    "electron": "catalog:",
+    "electron-builder": "catalog:",
+    "vite-plus": "catalog:"
+  },
+  "productName": "Kladd"
+}
