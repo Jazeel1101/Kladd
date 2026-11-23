@@ -35,6 +35,10 @@ export const RecordingStoreFile = Layer.effect(
       yield* fs.writeFileString(file, json);
     }, Effect.orDie);
 
-    return RecordingStore.of({ active, save });
+    const clear = fs
+      .remove(file, { force: true })
+      .pipe(Effect.orDie, Effect.withSpan("RecordingStoreFile.clear"));
+
+    return RecordingStore.of({ active, save, clear });
   }),
 );

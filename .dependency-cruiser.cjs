@@ -30,6 +30,13 @@ const packages = {
     node: false,
     hint: "core never touches the OS, files or network. Define a port (Context.Service) in packages/core/src/ports and implement it as a Layer in packages/infra or packages/platform-<os>.",
   },
+  adapters: {
+    dir: "packages/adapters",
+    workspace: ["domain"],
+    npm: [],
+    node: false,
+    hint: "adapters are pure: each picks an anchor from a FocusSnapshot and never calls the OS. If an adapter needs more data, add a field to FocusSnapshot in packages/domain and fill it in packages/platform-<os>. See docs/operations/adding-app-support.md.",
+  },
   infra: {
     dir: "packages/infra",
     workspace: ["core", "domain"],
@@ -60,7 +67,15 @@ const packages = {
   },
   desktop: {
     dir: "apps/desktop",
-    workspace: ["contract", "core", "domain", "infra", "platform-darwin", "rpc-electron"],
+    workspace: [
+      "adapters",
+      "contract",
+      "core",
+      "domain",
+      "infra",
+      "platform-darwin",
+      "rpc-electron",
+    ],
     npm: "any",
     node: true,
     hint: "desktop wires packages together but never imports apps/ui (it loads the built UI from disk).",
@@ -101,7 +116,7 @@ const perPackage = Object.entries(packages).flatMap(([name, p]) => {
     rules.push({
       name: `${name}-npm-imports`,
       severity: "error",
-      comment: `${name} may only import these npm packages: ${p.npm.join(", ")}. ${p.hint}`,
+      comment: `${name} may ${p.npm.length === 0 ? "not import npm packages" : `only import these npm packages: ${p.npm.join(", ")}`}. ${p.hint}`,
       from: { path: `^${self}/`, pathNot: tests },
       to: { dependencyTypes: npmTypes, pathNot: `node_modules/(${p.npm.join("|")})/` },
     });

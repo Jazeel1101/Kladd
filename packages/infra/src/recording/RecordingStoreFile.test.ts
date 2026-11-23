@@ -35,4 +35,18 @@ describe("RecordingStoreFile", () => {
       assert.deepStrictEqual(yield* store.active, Option.some(session));
     }).pipe(Effect.provide(inTempDir)),
   );
+
+  it.effect("returns none after clear", () =>
+    Effect.gen(function* () {
+      const store = yield* RecordingStore;
+      yield* store.save(
+        new RecordingSession({
+          id: RecordingSessionId.make("session-1"),
+          startedAt: DateTime.makeUnsafe("2026-01-01T10:00:00Z"),
+        }),
+      );
+      yield* store.clear;
+      assert.isTrue(Option.isNone(yield* store.active));
+    }).pipe(Effect.provide(inTempDir)),
+  );
 });

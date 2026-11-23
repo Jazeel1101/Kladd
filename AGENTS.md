@@ -33,7 +33,8 @@ Dependencies point inward: `apps → infra/platform → core → domain`.
 | `packages/contract`        | `KladdRpcs`: every call ui can make to main                |
 | `packages/core`            | Use cases, and the ports (interfaces) they need            |
 | `packages/infra`           | Port implementations that work on any OS (files, IDs, LLM) |
-| `packages/platform-darwin` | Port implementations for macOS (screen capture, overlays)  |
+| `packages/platform-darwin` | Port implementations for macOS (screen capture, focus)     |
+| `packages/adapters`        | One pure adapter per supported app (overlay anchoring)     |
 | `packages/rpc-electron`    | MessagePort transport for Effect RPC                       |
 | `apps/desktop`             | Electron main + preload; the only place layers are wired   |
 | `apps/ui`                  | React renderer, one route per window                       |
@@ -42,7 +43,7 @@ Each package has an `AGENTS.md` with what belongs there and the file to copy.
 
 ## Adding a feature
 
-Use the `adding-a-feature` skill. The example slice it follows is "start recording": `packages/domain/src/RecordingSession.ts` → `packages/contract/src/KladdRpcs.ts` → `packages/core/src/recording/Recordings.ts` → `packages/platform-darwin/src/ScreenCaptureDarwin.ts` + `packages/infra/src/recording/RecordingStoreFile.ts` → `apps/desktop/src/main/MainLive.ts` → `apps/ui/src/recording/`.
+Use the `adding-a-feature` skill. The example slice it follows is "recording": `packages/domain/src/RecordingSession.ts` → `packages/contract/src/KladdRpcs.ts` → `packages/core/src/recording/Recordings.ts` → `packages/platform-darwin/src/ScreenCaptureDarwin.ts` + `packages/infra/src/recording/RecordingStoreFile.ts` → `apps/desktop/src/main/MainLive.ts` → `apps/ui/src/recording/atoms.ts` + `apps/ui/src/pill/`. Stopping a recording opens the logging overlay: `packages/core/src/logging/LoggingOverlay.ts`.
 
 ## Effect style
 

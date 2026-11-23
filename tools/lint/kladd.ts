@@ -197,6 +197,22 @@ const schemaErrors = defineRule({
   },
 });
 
+const WINDOW_TABLE = "apps/desktop/src/main/windows.ts";
+
+const oneWindowTable = defineRule({
+  create(context) {
+    return {
+      NewExpression(node) {
+        if (node.callee.type !== "Identifier" || node.callee.name !== "BrowserWindow") return;
+        context.report({
+          node,
+          message: `Create windows only through the window table in ${WINDOW_TABLE}. Kladd is overlays only: add a WindowKind in packages/domain/src/Window.ts, a row in the table and a route in apps/ui/src/routes, then show it with the OverlayWindows port.`,
+        });
+      },
+    };
+  },
+});
+
 export default definePlugin({
   meta: { name: "kladd" },
   rules: {
@@ -209,5 +225,6 @@ export default definePlugin({
     "prefer-effect-fn": preferEffectFn,
     "service-style": serviceStyle,
     "schema-errors": schemaErrors,
+    "one-window-table": oneWindowTable,
   },
 });

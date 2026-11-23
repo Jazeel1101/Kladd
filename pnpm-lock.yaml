@@ -296,12 +296,18 @@ importers:
       '@effect/platform-node':
         specifier: 'catalog:'
         version: 4.1.5(effect@4.1.5)(redis@6.3.1)
+      '@kladd/adapters':
+        specifier: workspace:*
+        version: link:../../packages/adapters
       '@kladd/contract':
         specifier: workspace:*
         version: link:../../packages/contract
       '@kladd/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@kladd/domain':
+        specifier: workspace:*
+        version: link:../../packages/domain
       '@kladd/infra':
         specifier: workspace:*
         version: link:../../packages/infra
@@ -391,6 +397,19 @@ importers:
         specifier: 'catalog:'
         version: 1.4.0(@types/node@24.19.2)(@vitest/ui@5.0.5)(jiti@2.7.0)(typescript@7.1.0-beta)(yaml@2.9.1)
 
+  packages/adapters:
+    dependencies:
+      '@kladd/domain':
+        specifier: workspace:*
+        version: link:../domain
+    devDependencies:
+      '@effect/vitest':
+        specifier: 'catalog:'
+        version: 4.1.5(effect@4.1.5)(vitest@5.0.5)
+      vitest:
+        specifier: 'catalog:'
+        version: 5.0.5(@types/node@24.19.2)(@vitest/browser-preview@5.0.5)(@vitest/ui@5.0.5)(@voidzero-dev/vite-plus-core@1.4.0(@types/node@24.19.2)(jiti@2.7.0)(typescript@7.1.0-beta)(yaml@2.9.1))
+
   packages/contract:
     dependencies:
       '@kladd/domain':
@@ -456,6 +475,9 @@ importers:
       '@kladd/core':
         specifier: workspace:*
         version: link:../core
+      '@kladd/domain':
+        specifier: workspace:*
+        version: link:../domain
       effect:
         specifier: 'catalog:'
         version: 4.1.5

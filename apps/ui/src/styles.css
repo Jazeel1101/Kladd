@@ -1,3 +1,9 @@
 @layer ui-sdk;
 @import "tailwindcss";
 @import "@ui-sdk/core/web.css" layer(components);
+
+/* Overlay windows are transparent; each surface draws its own background. */
+html,
+body {
+  background: transparent;
+}
