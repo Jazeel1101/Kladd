@@ -1,6 +1,6 @@
 import { defineConfig } from "vite-plus";
 
-const generated = ["**/dist/**", "**/release/**", "**/routeTree.gen.ts"];
+const generated = ["**/dist/**", "**/release/**"];
 
 const kladdRules = {
   "kladd/no-effect-run": "error",

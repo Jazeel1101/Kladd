@@ -7,4 +7,5 @@ Things that look like mistakes but aren't.
 - **The lint plugin imports `vite-plus/lint/plugins`**, not `@oxlint/plugins`. vite-plus bundles oxlint, and its own `prefer-vite-plus-imports` rule forbids the direct import.
 - **apps/desktop bundles everything with `vp pack`.** Workspace packages and effect are devDependencies, so electron-builder ships only real runtime deps (`electron-updater`). The sandboxed preload must be CommonJS.
 - **`electron-updater` has a plain version range, not `catalog:`**, because electron-builder can't read catalog specifiers.
-- **The UI router uses hash history.** Production loads `index.html` from `file://`, where path URLs don't resolve. Each window opens its route via the hash.
+- **A window is picked by the URL hash.** Every window loads the same `index.html` with its `WindowKind` as the hash (`#pill`), and `apps/ui/src/main.tsx` renders that window. A hash, not a path, because production loads from `file://`.
+- **`import.meta.glob` negation must be relative** (`"!./apps/*.test.ts"`). Rolldown (`vp pack`) ignores `"!**/..."` and would bundle test files and vitest into the app; vitest accepts both. Used in `packages/adapters/src/index.ts`.

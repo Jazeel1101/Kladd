@@ -11,14 +11,6 @@ import { Schema } from "effect";
 export const WindowKind = Schema.Literals(["pill", "logging", "expanded", "settings"]);
 export type WindowKind = typeof WindowKind.Type;
 
-/** The UI route each window loads. */
-export const windowRoutes = {
-  pill: "/overlay/pill",
-  logging: "/overlay/logging",
-  expanded: "/overlay/expanded",
-  settings: "/settings",
-} as const satisfies Record<WindowKind, string>;
-
 /**
  * Windows the UI may open itself (contract ShowWindow). Not `logging`: core's LoggingOverlay opens it,
  * because it has to be placed next to where the user writes.

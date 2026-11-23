@@ -1,11 +1,5 @@
 import { OverlayWindows } from "@kladd/core";
-import {
-  placeWithoutAnchor,
-  windowRoutes,
-  type Rect,
-  type Size,
-  type WindowKind,
-} from "@kladd/domain";
+import { placeWithoutAnchor, type Rect, type Size, type WindowKind } from "@kladd/domain";
 import { BrowserWindow, app, screen } from "electron";
 import { Effect, Layer, Schedule } from "effect";
 import { join } from "node:path";
@@ -106,13 +100,14 @@ const createWindow = (spec: WindowSpec) => {
   return window;
 };
 
-const loadRoute = (window: BrowserWindow, route: string) =>
+/** The UI renders the window named by the hash (apps/ui/src/main.tsx). */
+const loadWindow = (window: BrowserWindow, kind: WindowKind) =>
   devServerUrl !== undefined
-    ? Effect.tryPromise(() => window.loadURL(`${devServerUrl}#${route}`)).pipe(
+    ? Effect.tryPromise(() => window.loadURL(`${devServerUrl}#${kind}`)).pipe(
         // The Vite dev server may still be starting.
         Effect.retry({ schedule: Schedule.spaced("250 millis"), times: 40 }),
       )
-    : Effect.tryPromise(() => window.loadFile(uiIndexPath, { hash: route }));
+    : Effect.tryPromise(() => window.loadFile(uiIndexPath, { hash: kind }));
 
 /** OverlayWindows port: creates each window on first use and reuses it after that. */
 export const OverlayWindowsLive = Layer.effect(
@@ -128,7 +123,7 @@ export const OverlayWindowsLive = Layer.effect(
       if (existing !== undefined && !existing.isDestroyed()) return existing;
       const window = createWindow(windowTable[kind]);
       open.set(kind, window);
-      yield* loadRoute(window, windowRoutes[kind]).pipe(Effect.orDie);
+      yield* loadWindow(window, kind).pipe(Effect.orDie);
       return window;
     });
 

@@ -206,7 +206,7 @@ const oneWindowTable = defineRule({
         if (node.callee.type !== "Identifier" || node.callee.name !== "BrowserWindow") return;
         context.report({
           node,
-          message: `Create windows only through the window table in ${WINDOW_TABLE}. Kladd is overlays only: add a WindowKind in packages/domain/src/Window.ts, a row in the table and a route in apps/ui/src/routes, then show it with the OverlayWindows port.`,
+          message: `Create windows only through the window table in ${WINDOW_TABLE}. Kladd is overlays only: add a WindowKind in packages/domain/src/Window.ts and follow the type errors (a row in the table, a component in apps/ui/src/main.tsx), then show it with the OverlayWindows port.`,
         });
       },
     };

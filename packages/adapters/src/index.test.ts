@@ -1,29 +1,20 @@
 import { assert, describe, it } from "@effect/vitest";
-import type { AppAdapter } from "@kladd/domain";
 import { Generic, appAdapters } from "./index";
 
-// Vite resolves import.meta.glob when vitest loads this file; this only types it.
-declare global {
-  interface ImportMeta {
-    glob<T>(pattern: string, options: { eager: true }): Record<string, T>;
-  }
-}
-
-const notAdapters = new Set(["./index.ts", "./Generic.ts"]);
-const adapterFiles = Object.entries(
-  import.meta.glob<Record<string, AppAdapter>>("./*.ts", { eager: true }),
-).filter(([file]) => !notAdapters.has(file) && !file.endsWith(".test.ts"));
-
 describe("appAdapters", () => {
-  it("registers every adapter in src/", () => {
-    assert.isNotEmpty(adapterFiles);
-    for (const [file, exports] of adapterFiles) {
-      for (const adapter of Object.values(exports)) {
-        assert.isTrue(
-          appAdapters.includes(adapter),
-          `${file} exports adapter "${adapter.id}", but it is not in appAdapters in src/index.ts. Add it there.`,
-        );
-      }
+  it("loads the adapters in src/apps/", () => {
+    assert.include(
+      appAdapters.map((adapter) => adapter.id),
+      "onenote",
+    );
+  });
+
+  it("loads only adapters", () => {
+    for (const adapter of appAdapters) {
+      assert.isFunction(
+        adapter.anchor,
+        "Every export of a file in src/apps/ is loaded as an adapter: export only the makeAppAdapter(...) value, and move helpers out of src/apps/.",
+      );
     }
   });
 
