@@ -341,6 +341,9 @@ importers:
       '@kladd/contract':
         specifier: workspace:*
         version: link:../../packages/contract
+      '@kladd/domain':
+        specifier: workspace:*
+        version: link:../../packages/domain
       '@kladd/rpc-electron':
         specifier: workspace:*
         version: link:../../packages/rpc-electron

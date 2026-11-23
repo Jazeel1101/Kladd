@@ -1,6 +1,6 @@
 import { useAtomSet } from "@effect/atom-react";
 import { Button } from "@ui-sdk/react/button";
-import { hideWindowAtom } from "../windowAtoms";
+import { hideWindowAtom } from "../windows/atoms";
 
 /**
  * LoggingOverlay: sits next to where the user writes their log and opens when a recording stops.

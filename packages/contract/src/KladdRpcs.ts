@@ -1,4 +1,4 @@
-import { RecordingSession, WindowKind } from "@kladd/domain";
+import { ClosableWindow, OpenableWindow, RecordingSession } from "@kladd/domain";
 import { Schema } from "effect";
 import { Rpc, RpcGroup } from "effect/rpc";
 
@@ -15,6 +15,6 @@ export class KladdRpcs extends RpcGroup.make(
   }),
   /** Pops up the pill's native menu: start/stop recording, Settings, Quit. */
   Rpc.make("OpenPillMenu"),
-  Rpc.make("ShowWindow", { payload: { kind: WindowKind } }),
-  Rpc.make("HideWindow", { payload: { kind: WindowKind } }),
+  Rpc.make("ShowWindow", { payload: { kind: OpenableWindow } }),
+  Rpc.make("HideWindow", { payload: { kind: ClosableWindow } }),
 ) {}

@@ -11,8 +11,7 @@ An app adapter tells the logging overlay what to sit next to in one app. Adapter
    });
    ```
    Find the bundle id with `osascript -e 'id of app "<App name>"'`. Return `null` to use the no-anchor position.
-2. Add it to `appAdapters` in `packages/adapters/src/index.ts`.
-3. Test `anchor` with snapshots shaped like the app's real ones, including missing caret and missing element. Copy `OneNote.test.ts`.
+2. Test `anchor` with snapshots shaped like the app's real ones, including missing caret and missing element. Copy `OneNote.test.ts`.
 
 Apps without an adapter use `Generic` (caret, then element, then window).
 

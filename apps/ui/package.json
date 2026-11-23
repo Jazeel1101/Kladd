@@ -11,6 +11,7 @@
   "dependencies": {
     "@effect/atom-react": "catalog:",
     "@kladd/contract": "workspace:*",
+    "@kladd/domain": "workspace:*",
     "@kladd/rpc-electron": "workspace:*",
     "@tanstack/react-router": "catalog:",
     "@ui-sdk/core": "catalog:",

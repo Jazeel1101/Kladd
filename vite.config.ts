@@ -13,6 +13,7 @@ const kladdRules = {
   "kladd/service-style": "error",
   "kladd/schema-errors": "error",
   "kladd/one-window-table": "error",
+  "kladd/atoms-in-atoms-files": "error",
 } as const;
 
 const off = (rules: Record<string, unknown>): Record<string, "off"> =>

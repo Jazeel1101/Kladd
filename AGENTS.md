@@ -43,7 +43,7 @@ Each package has an `AGENTS.md` with what belongs there and the file to copy.
 
 ## Adding a feature
 
-Use the `adding-a-feature` skill. The example slice it follows is "recording": `packages/domain/src/RecordingSession.ts` → `packages/contract/src/KladdRpcs.ts` → `packages/core/src/recording/Recordings.ts` → `packages/platform-darwin/src/ScreenCaptureDarwin.ts` + `packages/infra/src/recording/RecordingStoreFile.ts` → `apps/desktop/src/main/MainLive.ts` → `apps/ui/src/recording/atoms.ts` + `apps/ui/src/pill/`. Stopping a recording opens the logging overlay: `packages/core/src/logging/LoggingOverlay.ts`.
+Use the `adding-a-feature` skill. The example slice it follows is "recording": `packages/domain/src/RecordingSession.ts` → `packages/core/src/recording/Recordings.ts` → `packages/platform-darwin/src/ScreenCaptureDarwin.ts` + `packages/infra/src/recording/RecordingStoreFile.ts` → `apps/desktop/src/main/MainLive.ts`. The user starts and stops it from the pill menu (`apps/desktop/src/main/pillMenu.ts`); the UI watches it through the `WatchRecording` Rpc (`packages/contract/src/KladdRpcs.ts` → `apps/ui/src/recording/atoms.ts` → `apps/ui/src/pill/`). Stopping a recording opens the logging overlay: `packages/core/src/logging/LoggingOverlay.ts`.
 
 ## Effect style
 

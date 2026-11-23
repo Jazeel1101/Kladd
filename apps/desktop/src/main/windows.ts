@@ -1,5 +1,11 @@
 import { OverlayWindows } from "@kladd/core";
-import type { Rect, Size, WindowKind } from "@kladd/domain";
+import {
+  placeWithoutAnchor,
+  windowRoutes,
+  type Rect,
+  type Size,
+  type WindowKind,
+} from "@kladd/domain";
 import { BrowserWindow, app, screen } from "electron";
 import { Effect, Layer, Schedule } from "effect";
 import { join } from "node:path";
@@ -19,8 +25,6 @@ export const isAppUrl = (url: string): boolean =>
   devServerUrl !== undefined ? url.startsWith(devServerUrl) : url.startsWith("file://");
 
 interface WindowSpec {
-  /** UI route, a file in apps/ui/src/routes. */
-  readonly route: string;
   readonly size: Size;
   /** Overlays float over other apps and never take focus when shown. Settings is the only non-overlay. */
   readonly overlay: boolean;
@@ -29,12 +33,10 @@ interface WindowSpec {
 }
 
 /**
- * Every window Kladd has: the only place a BrowserWindow is created (lint: kladd/one-window-table).
- * Adding a window: add a WindowKind in packages/domain/src/Window.ts, a row here and a route in apps/ui.
+ * Every window Kladd has. Adding one starts with a WindowKind in packages/domain/src/Window.ts.
  */
 const windowTable: Record<WindowKind, WindowSpec> = {
   pill: {
-    route: "/overlay/pill",
     size: { width: 132, height: 36 },
     overlay: true,
     // Left screen edge, four fifths down.
@@ -44,23 +46,17 @@ const windowTable: Record<WindowKind, WindowSpec> = {
     }),
   },
   logging: {
-    route: "/overlay/logging",
     size: { width: 360, height: 480 },
     overlay: true,
     // Normally placed by core's LoggingOverlay; this is only the fallback.
-    position: (size, area) => ({
-      x: area.x + area.width - size.width - 8,
-      y: area.y + Math.round((area.height - size.height) / 2),
-    }),
+    position: placeWithoutAnchor,
   },
   expanded: {
-    route: "/overlay/expanded",
     size: { width: 720, height: 560 },
     overlay: true,
     position: centred,
   },
   settings: {
-    route: "/settings",
     size: { width: 640, height: 480 },
     overlay: false,
     position: centred,
@@ -130,10 +126,9 @@ export const OverlayWindowsLive = Layer.effect(
     const get = Effect.fn("OverlayWindows.get")(function* (kind: WindowKind) {
       const existing = open.get(kind);
       if (existing !== undefined && !existing.isDestroyed()) return existing;
-      const spec = windowTable[kind];
-      const window = createWindow(spec);
+      const window = createWindow(windowTable[kind]);
       open.set(kind, window);
-      yield* loadRoute(window, spec.route).pipe(Effect.orDie);
+      yield* loadRoute(window, windowRoutes[kind]).pipe(Effect.orDie);
       return window;
     });
 

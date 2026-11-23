@@ -1,28 +1,27 @@
 import { useAtomSet, useAtomValue } from "@effect/atom-react";
 import { Button } from "@ui-sdk/react/button";
-import { DateTime } from "effect";
+import { elapsed } from "@kladd/domain";
+import { DateTime, Duration } from "effect";
 import { AsyncResult } from "effect/reactivity";
 import { useEffect, useState } from "react";
 import { cn } from "../lib/cn";
 import { recordingAtom } from "../recording/atoms";
-import { KladdClient } from "../rpc";
-import { showWindowAtom } from "../windowAtoms";
+import { showWindowAtom } from "../windows/atoms";
+import { openMenuAtom } from "./atoms";
 
-const openMenuAtom = KladdClient.mutation("OpenPillMenu");
-
-const formatElapsed = (ms: number): string => {
-  const seconds = Math.floor(ms / 1000);
+const formatElapsed = (duration: Duration.Duration): string => {
+  const seconds = Math.floor(Duration.toSeconds(duration));
   const mm = String(Math.floor(seconds / 60)).padStart(2, "0");
   const ss = String(seconds % 60).padStart(2, "0");
   return `${mm}:${ss}`;
 };
 
 /** Re-renders every second while `active`. */
-const useNow = (active: boolean): number => {
-  const [now, setNow] = useState(() => Date.now());
+const useNow = (active: boolean): DateTime.Utc => {
+  const [now, setNow] = useState(DateTime.nowUnsafe);
   useEffect(() => {
     if (!active) return;
-    const timer = setInterval(() => setNow(Date.now()), 1000);
+    const timer = setInterval(() => setNow(DateTime.nowUnsafe()), 1000);
     return () => clearInterval(timer);
   }, [active]);
   return now;
@@ -57,9 +56,7 @@ export const RecordingPill = () => {
           )}
         />
         <span className="tabular-nums">
-          {session === null
-            ? "Kladd"
-            : formatElapsed(now - DateTime.toEpochMillis(session.startedAt))}
+          {session === null ? "Kladd" : formatElapsed(elapsed(session, now))}
         </span>
       </Button>
       <Button

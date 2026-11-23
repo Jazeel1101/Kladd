@@ -1,6 +1,6 @@
 import { useAtomSet } from "@effect/atom-react";
 import { Button } from "@ui-sdk/react/button";
-import { hideWindowAtom } from "../windowAtoms";
+import { hideWindowAtom } from "../windows/atoms";
 
 /** ExpandedView: summary and images of a recording, opened from the pill. */
 export const ExpandedView = () => {

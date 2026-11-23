@@ -213,6 +213,22 @@ const oneWindowTable = defineRule({
   },
 });
 
+const atomsInAtomsFiles = defineRule({
+  create(context) {
+    if (context.filename.endsWith("/atoms.ts")) return {};
+    return {
+      MemberExpression(node) {
+        if (node.object.type !== "Identifier" || node.object.name !== "KladdClient") return;
+        context.report({
+          node,
+          message:
+            "Build KladdClient atoms only in the feature's atoms.ts (apps/ui/src/<feature>/atoms.ts, example: apps/ui/src/recording/atoms.ts), then import the atom into the component.",
+        });
+      },
+    };
+  },
+});
+
 export default definePlugin({
   meta: { name: "kladd" },
   rules: {
@@ -226,5 +242,6 @@ export default definePlugin({
     "service-style": serviceStyle,
     "schema-errors": schemaErrors,
     "one-window-table": oneWindowTable,
+    "atoms-in-atoms-files": atomsInAtomsFiles,
   },
 });
