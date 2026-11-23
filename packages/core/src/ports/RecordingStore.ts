@@ -10,5 +10,7 @@ export class RecordingStore extends Context.Service<
   {
     readonly active: Effect.Effect<Option.Option<RecordingSession>>;
     readonly save: (session: RecordingSession) => Effect.Effect<void>;
+    /** Forgets the active session. */
+    readonly clear: Effect.Effect<void>;
   }
 >()("kladd/core/RecordingStore") {}

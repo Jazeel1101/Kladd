@@ -1,8 +1,4 @@
-import {
-  RecordingAlreadyActive,
-  RecordingSession,
-  ScreenCapturePermissionDenied,
-} from "@kladd/domain";
+import { ClosableWindow, OpenableWindow, RecordingSession } from "@kladd/domain";
 import { Schema } from "effect";
 import { Rpc, RpcGroup } from "effect/rpc";
 
@@ -12,11 +8,13 @@ import { Rpc, RpcGroup } from "effect/rpc";
  * Payload, success and error must be schemas from @kladd/domain (or plain Schema), never classes from core.
  */
 export class KladdRpcs extends RpcGroup.make(
-  Rpc.make("StartRecording", {
-    success: RecordingSession,
-    error: Schema.Union([RecordingAlreadyActive, ScreenCapturePermissionDenied]),
-  }),
-  Rpc.make("GetActiveRecording", {
+  /** The active recording, then every change to it. Starting and stopping happen in the pill menu. */
+  Rpc.make("WatchRecording", {
     success: Schema.NullOr(RecordingSession),
+    stream: true,
   }),
+  /** Pops up the pill's native menu: start/stop recording, Settings, Quit. */
+  Rpc.make("OpenPillMenu"),
+  Rpc.make("ShowWindow", { payload: { kind: OpenableWindow } }),
+  Rpc.make("HideWindow", { payload: { kind: ClosableWindow } }),
 ) {}

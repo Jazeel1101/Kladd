@@ -1,6 +1,7 @@
 import { KladdRpcs } from "@kladd/contract";
-import { Recordings } from "@kladd/core";
-import { Effect, Option } from "effect";
+import { OverlayWindows, Recordings } from "@kladd/core";
+import { Effect, Option, Stream } from "effect";
+import { PillMenu } from "../pillMenu";
 
 /**
  * Maps each Rpc in @kladd/contract to a core use case. Keep handlers thin:
@@ -9,9 +10,13 @@ import { Effect, Option } from "effect";
 export const RpcHandlersLive = KladdRpcs.toLayer(
   Effect.gen(function* () {
     const recordings = yield* Recordings;
+    const windows = yield* OverlayWindows;
+    const pillMenu = yield* PillMenu;
     return {
-      StartRecording: () => recordings.start,
-      GetActiveRecording: () => Effect.map(recordings.active, Option.getOrNull),
+      WatchRecording: () => Stream.map(recordings.changes, Option.getOrNull),
+      OpenPillMenu: () => pillMenu.open,
+      ShowWindow: ({ kind }) => windows.show(kind),
+      HideWindow: ({ kind }) => windows.hide(kind),
     };
   }),
 );

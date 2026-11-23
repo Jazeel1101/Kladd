@@ -1,6 +1,6 @@
 import { defineConfig } from "vite-plus";
 
-const generated = ["**/dist/**", "**/release/**", "**/routeTree.gen.ts"];
+const generated = ["**/dist/**", "**/release/**"];
 
 const kladdRules = {
   "kladd/no-effect-run": "error",
@@ -12,6 +12,8 @@ const kladdRules = {
   "kladd/prefer-effect-fn": "error",
   "kladd/service-style": "error",
   "kladd/schema-errors": "error",
+  "kladd/one-window-table": "error",
+  "kladd/atoms-in-atoms-files": "error",
 } as const;
 
 const off = (rules: Record<string, unknown>): Record<string, "off"> =>
@@ -39,6 +41,7 @@ export default defineConfig({
         files: ["apps/desktop/src/main/**", "packages/rpc-electron/**"],
         rules: { "kladd/no-effect-run": "off" },
       },
+      { files: ["apps/desktop/src/main/windows.ts"], rules: { "kladd/one-window-table": "off" } },
       {
         files: tests,
         rules: {

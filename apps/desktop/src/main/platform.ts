@@ -1,6 +1,8 @@
-import { ScreenCapture } from "@kladd/core";
-import { ScreenCaptureDarwin } from "@kladd/platform-darwin";
+import { FocusTracker, ScreenCapture } from "@kladd/core";
+import { FocusTrackerDarwin, ScreenCaptureDarwin } from "@kladd/platform-darwin";
 import { Effect, Layer } from "effect";
+
+const unsupported = Effect.die(`Kladd has no platform layer for ${process.platform} yet.`);
 
 /**
  * Picks the OS layers for core's platform ports.
@@ -9,10 +11,10 @@ import { Effect, Layer } from "effect";
 export const PlatformLive = Layer.unwrap(
   Effect.sync(() =>
     process.platform === "darwin"
-      ? ScreenCaptureDarwin
-      : Layer.effect(
-          ScreenCapture,
-          Effect.die(`Kladd has no platform layer for ${process.platform} yet.`),
+      ? Layer.mergeAll(ScreenCaptureDarwin, FocusTrackerDarwin)
+      : Layer.mergeAll(
+          Layer.effect(ScreenCapture, unsupported),
+          Layer.effect(FocusTracker, unsupported),
         ),
   ),
 );

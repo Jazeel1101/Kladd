@@ -9,5 +9,6 @@ export class ScreenCapture extends Context.Service<
   ScreenCapture,
   {
     readonly start: Effect.Effect<void, ScreenCapturePermissionDenied>;
+    readonly stop: Effect.Effect<void>;
   }
 >()("kladd/core/ScreenCapture") {}

@@ -197,6 +197,38 @@ const schemaErrors = defineRule({
   },
 });
 
+const WINDOW_TABLE = "apps/desktop/src/main/windows.ts";
+
+const oneWindowTable = defineRule({
+  create(context) {
+    return {
+      NewExpression(node) {
+        if (node.callee.type !== "Identifier" || node.callee.name !== "BrowserWindow") return;
+        context.report({
+          node,
+          message: `Create windows only through the window table in ${WINDOW_TABLE}. Kladd is overlays only: add a WindowKind in packages/domain/src/Window.ts and follow the type errors (a row in the table, a component in apps/ui/src/main.tsx), then show it with the OverlayWindows port.`,
+        });
+      },
+    };
+  },
+});
+
+const atomsInAtomsFiles = defineRule({
+  create(context) {
+    if (context.filename.endsWith("/atoms.ts")) return {};
+    return {
+      MemberExpression(node) {
+        if (node.object.type !== "Identifier" || node.object.name !== "KladdClient") return;
+        context.report({
+          node,
+          message:
+            "Build KladdClient atoms only in the feature's atoms.ts (apps/ui/src/<feature>/atoms.ts, example: apps/ui/src/recording/atoms.ts), then import the atom into the component.",
+        });
+      },
+    };
+  },
+});
+
 export default definePlugin({
   meta: { name: "kladd" },
   rules: {
@@ -209,5 +241,7 @@ export default definePlugin({
     "prefer-effect-fn": preferEffectFn,
     "service-style": serviceStyle,
     "schema-errors": schemaErrors,
+    "one-window-table": oneWindowTable,
+    "atoms-in-atoms-files": atomsInAtomsFiles,
   },
 });

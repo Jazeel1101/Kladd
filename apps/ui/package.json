@@ -11,8 +11,8 @@
   "dependencies": {
     "@effect/atom-react": "catalog:",
     "@kladd/contract": "workspace:*",
+    "@kladd/domain": "workspace:*",
     "@kladd/rpc-electron": "workspace:*",
-    "@tanstack/react-router": "catalog:",
     "@ui-sdk/core": "catalog:",
     "@ui-sdk/react": "catalog:",
     "clsx": "catalog:",
@@ -23,7 +23,6 @@
   },
   "devDependencies": {
     "@tailwindcss/vite": "catalog:",
-    "@tanstack/router-plugin": "catalog:",
     "@types/node": "catalog:",
     "@types/react": "catalog:",
     "@types/react-dom": "catalog:",

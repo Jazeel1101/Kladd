@@ -16,8 +16,10 @@
   },
   "devDependencies": {
     "@effect/platform-node": "catalog:",
+    "@kladd/adapters": "workspace:*",
     "@kladd/contract": "workspace:*",
     "@kladd/core": "workspace:*",
+    "@kladd/domain": "workspace:*",
     "@kladd/infra": "workspace:*",
     "@kladd/platform-darwin": "workspace:*",
     "@kladd/rpc-electron": "workspace:*",

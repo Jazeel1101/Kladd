@@ -9,5 +9,6 @@ export const ScreenCaptureDarwin = Layer.succeed(
   ScreenCapture,
   ScreenCapture.of({
     start: Effect.logInfo("ScreenCaptureDarwin.start (stub: not capturing yet)"),
+    stop: Effect.logInfo("ScreenCaptureDarwin.stop (stub)"),
   }),
 );

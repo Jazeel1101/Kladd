@@ -26,3 +26,8 @@ export class ScreenCapturePermissionDenied extends Schema.TaggedError<
   ScreenCapturePermissionDenied,
   { readonly brand: unique symbol }
 >()("ScreenCapturePermissionDenied", {}) {}
+
+export class NoActiveRecording extends Schema.TaggedError<
+  NoActiveRecording,
+  { readonly brand: unique symbol }
+>()("NoActiveRecording", {}) {}
