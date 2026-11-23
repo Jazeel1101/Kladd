@@ -1,7 +1,7 @@
 // @ts-check
 /**
  * The package graph (see AGENTS.md). Every rule's `comment` is the fix: depcruise prints it on violation.
- * Adding a package: add it to `packages` below, write an ADR in docs/adr, and add its AGENTS.md.
+ * Adding a package: ask the user first, then add it to `packages` below and give it an AGENTS.md.
  */
 
 /**
@@ -125,7 +125,7 @@ module.exports = {
     {
       name: "unknown-package",
       severity: "error",
-      comment: `Not an approved package. Approved: ${dirs.join(", ")}. Put the code in one of them (see AGENTS.md). A new package needs an ADR in docs/adr and an entry in .dependency-cruiser.cjs. Never add "shared" or "utils" packages.`,
+      comment: `Not an approved package. Approved: ${dirs.join(", ")}. Put the code in one of them (see AGENTS.md). A new package needs the user's approval and an entry in .dependency-cruiser.cjs. Never add "shared" or "utils" packages.`,
       from: {
         path: "^(apps|packages)/",
         pathNot: `^(${Object.values(packages)

@@ -17,4 +17,4 @@ Build the feature as a vertical slice through the layers, copying the "start rec
 8. **UI** (`apps/ui/src/<feature>/`). Add atoms from `KladdClient.query` / `KladdClient.mutation` with shared `reactivityKeys`, a component that renders every error tag, and a route in `src/routes/` if it's a new window. Copy `src/recording/`. Done when each error tag has a message.
 9. **Gate.** Run `vp run check` and fix what it reports. Each message says how. Done when it exits 0.
 
-If a step seems to require breaking a rule, such as importing core from ui, adding a package, or throwing, the feature belongs in a different layer. Re-read the package's `AGENTS.md`, or ask the user before writing an ADR.
+If a step seems to require breaking a rule, such as importing core from ui, adding a package, or throwing, the feature belongs in a different layer. Re-read the package's `AGENTS.md`, or ask the user.
