@@ -134,22 +134,20 @@ export const OverlayWindowsLive = Layer.effect(
         open.set(kind, created);
         yield* loadWindow(created.window, kind).pipe(
           Effect.orDie,
+          // A window that failed to load is dropped, so the next show creates it again.
+          Effect.tapCause(() =>
+            Effect.sync(() => {
+              if (open.get(kind) === created) open.delete(kind);
+              if (!created.window.isDestroyed()) created.window.destroy();
+            }),
+          ),
           Deferred.into(created.loaded),
           Effect.forkIn(scope),
         );
         entry = created;
       }
-      const { window, loaded } = entry;
-      // A window that failed to load is dropped, so the next show creates it again.
-      yield* Deferred.await(loaded).pipe(
-        Effect.tapCause(() =>
-          Effect.sync(() => {
-            if (open.get(kind)?.window === window) open.delete(kind);
-            if (!window.isDestroyed()) window.destroy();
-          }),
-        ),
-      );
-      return window;
+      yield* Deferred.await(entry.loaded);
+      return entry.window;
     });
 
     const show = Effect.fn("OverlayWindows.show")(function* (kind: WindowKind, bounds?: Rect) {
