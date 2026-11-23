@@ -63,6 +63,37 @@ describe("Recordings", () => {
     }).pipe(Effect.provide(withCapture(ScreenCaptureTest.granted))),
   );
 
+  it.effect("concurrent starts create one session", () =>
+    Effect.gen(function* () {
+      const recordings = yield* Recordings;
+      const results = yield* Effect.all([recordings.start, recordings.start], {
+        concurrency: "unbounded",
+        mode: "result",
+      });
+      assert.deepStrictEqual(
+        results.map((result) => result._tag),
+        ["Success", "Failure"],
+      );
+    }).pipe(Effect.provide(withCapture(ScreenCaptureTest.slow))),
+  );
+
+  it.effect("a stop that overlaps another stop leaves a newer session alone", () =>
+    Effect.gen(function* () {
+      const recordings = yield* Recordings;
+      yield* recordings.start;
+      const stops = yield* Effect.all([recordings.stop, recordings.stop], {
+        concurrency: "unbounded",
+        mode: "result",
+      });
+      assert.deepStrictEqual(
+        stops.map((result) => result._tag),
+        ["Success", "Failure"],
+      );
+      const next = yield* recordings.start;
+      assert.deepStrictEqual(yield* recordings.active, Option.some(next));
+    }).pipe(Effect.provide(withCapture(ScreenCaptureTest.slow))),
+  );
+
   it.effect("stop fails with NoActiveRecording when nothing is recording", () =>
     Effect.gen(function* () {
       const recordings = yield* Recordings;

@@ -1,7 +1,7 @@
 import { OverlayWindows } from "@kladd/core";
 import { placeWithoutAnchor, type Rect, type Size, type WindowKind } from "@kladd/domain";
 import { BrowserWindow, app, screen } from "electron";
-import { Effect, Layer, Schedule } from "effect";
+import { Deferred, Effect, Layer, Schedule } from "effect";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -113,17 +113,42 @@ const loadWindow = (window: BrowserWindow, kind: WindowKind) =>
 export const OverlayWindowsLive = Layer.effect(
   OverlayWindows,
   Effect.gen(function* () {
-    const open = new Map<WindowKind, BrowserWindow>();
+    // Each window with its load. Both are stored before anything yields, so concurrent callers share
+    // one window, and the load runs in the layer's scope, so a cancelled caller can't abandon it.
+    const open = new Map<
+      WindowKind,
+      { readonly window: BrowserWindow; readonly loaded: Deferred.Deferred<void> }
+    >();
+    const scope = yield* Effect.scope;
     yield* Effect.addFinalizer(() =>
-      Effect.sync(() => open.forEach((window) => window.isDestroyed() || window.destroy())),
+      Effect.sync(() => open.forEach(({ window }) => window.isDestroyed() || window.destroy())),
     );
 
     const get = Effect.fn("OverlayWindows.get")(function* (kind: WindowKind) {
-      const existing = open.get(kind);
-      if (existing !== undefined && !existing.isDestroyed()) return existing;
-      const window = createWindow(windowTable[kind]);
-      open.set(kind, window);
-      yield* loadWindow(window, kind).pipe(Effect.orDie);
+      let entry = open.get(kind);
+      if (entry === undefined || entry.window.isDestroyed()) {
+        const created = {
+          window: createWindow(windowTable[kind]),
+          loaded: Deferred.makeUnsafe<void>(),
+        };
+        open.set(kind, created);
+        yield* loadWindow(created.window, kind).pipe(
+          Effect.orDie,
+          Deferred.into(created.loaded),
+          Effect.forkIn(scope),
+        );
+        entry = created;
+      }
+      const { window, loaded } = entry;
+      // A window that failed to load is dropped, so the next show creates it again.
+      yield* Deferred.await(loaded).pipe(
+        Effect.tapCause(() =>
+          Effect.sync(() => {
+            if (open.get(kind)?.window === window) open.delete(kind);
+            if (!window.isDestroyed()) window.destroy();
+          }),
+        ),
+      );
       return window;
     });
 
@@ -144,7 +169,7 @@ export const OverlayWindowsLive = Layer.effect(
 
     const hide = (kind: WindowKind) =>
       Effect.sync(() => {
-        const window = open.get(kind);
+        const window = open.get(kind)?.window;
         if (window !== undefined && !window.isDestroyed()) window.hide();
       }).pipe(Effect.withSpan("OverlayWindows.hide"));
 

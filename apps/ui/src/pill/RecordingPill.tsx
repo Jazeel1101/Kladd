@@ -10,7 +10,8 @@ import { showWindowAtom } from "../windows/atoms";
 import { openMenuAtom } from "./atoms";
 
 const formatElapsed = (duration: Duration.Duration): string => {
-  const seconds = Math.floor(Duration.toSeconds(duration));
+  // Clamped: the first render after a start can read a clock from before it.
+  const seconds = Math.max(0, Math.floor(Duration.toSeconds(duration)));
   const mm = String(Math.floor(seconds / 60)).padStart(2, "0");
   const ss = String(seconds % 60).padStart(2, "0");
   return `${mm}:${ss}`;
@@ -21,6 +22,7 @@ const useNow = (active: boolean): DateTime.Utc => {
   const [now, setNow] = useState(DateTime.nowUnsafe);
   useEffect(() => {
     if (!active) return;
+    setNow(DateTime.nowUnsafe());
     const timer = setInterval(() => setNow(DateTime.nowUnsafe()), 1000);
     return () => clearInterval(timer);
   }, [active]);

@@ -4,7 +4,16 @@ import {
   RecordingSession,
   type ScreenCapturePermissionDenied,
 } from "@kladd/domain";
-import { Context, DateTime, Effect, Layer, Option, type Stream, SubscriptionRef } from "effect";
+import {
+  Context,
+  DateTime,
+  Effect,
+  Layer,
+  Option,
+  Semaphore,
+  type Stream,
+  SubscriptionRef,
+} from "effect";
 import { LoggingOverlay } from "../logging/LoggingOverlay";
 import { Ids } from "../ports/Ids";
 import { RecordingStore } from "../ports/RecordingStore";
@@ -36,6 +45,8 @@ export class Recordings extends Context.Service<
       const ids = yield* Ids;
       const logging = yield* LoggingOverlay;
       const current = yield* SubscriptionRef.make(yield* store.active);
+      // Start and stop check, then change, the active recording; one at a time so they can't interleave.
+      const exclusive = Semaphore.withPermit(yield* Semaphore.make(1));
 
       const start = Effect.gen(function* () {
         const active = yield* SubscriptionRef.get(current);
@@ -50,16 +61,19 @@ export class Recordings extends Context.Service<
         yield* store.save(session);
         yield* SubscriptionRef.set(current, Option.some(session));
         return session;
-      }).pipe(Effect.withSpan("Recordings.start"));
+      }).pipe(exclusive, Effect.withSpan("Recordings.start"));
 
       const stop = Effect.gen(function* () {
-        const active = yield* SubscriptionRef.get(current);
-        if (Option.isNone(active)) return yield* new NoActiveRecording({});
-        yield* capture.stop;
-        yield* store.clear;
-        yield* SubscriptionRef.set(current, Option.none());
+        const stopped = yield* Effect.gen(function* () {
+          const active = yield* SubscriptionRef.get(current);
+          if (Option.isNone(active)) return yield* new NoActiveRecording({});
+          yield* capture.stop;
+          yield* store.clear;
+          yield* SubscriptionRef.set(current, Option.none());
+          return active.value;
+        }).pipe(exclusive);
         yield* logging.open;
-        return active.value;
+        return stopped;
       }).pipe(Effect.withSpan("Recordings.stop"));
 
       return Recordings.of({

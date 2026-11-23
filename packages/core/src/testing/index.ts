@@ -26,6 +26,11 @@ export const ScreenCaptureTest = {
     ScreenCapture,
     ScreenCapture.of({ start: Effect.void, stop: Effect.void }),
   ),
+  /** Like granted, but start and stop yield first, so concurrent calls interleave as with a real capture. */
+  slow: Layer.succeed(
+    ScreenCapture,
+    ScreenCapture.of({ start: Effect.yieldNow, stop: Effect.yieldNow }),
+  ),
   denied: Layer.succeed(
     ScreenCapture,
     ScreenCapture.of({
