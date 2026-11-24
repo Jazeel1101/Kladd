@@ -26,15 +26,13 @@ export const flare = fillet + (pill.width - pill.radius) * Math.tan(tilt);
 
 /**
  * The SVG canvas, equal to the pill window's size (apps/desktop/src/main/windows.ts). Square, so
- * column and row both fit without resizing the window.
+ * column and row both fit without resizing the window, and wide enough for the tray to slide out
+ * with a screenshot beside the pill (src/pill/intake.ts).
  */
-const size = Math.ceil(pill.height + 2 * (flare + shadowPad));
+const size = 560;
 export const canvas = { width: size, height: size };
-/**
- * How far from a wall its pull starts: the wall's snap zone. The pill sits centred in the canvas,
- * so this is also where the window meets the wall and the pill starts moving inside it.
- */
-export const attractRange = (size - pill.width) / 2;
+/** How far from a wall its pull starts: the wall's snap zone. Room for the docked notch's flare. */
+export const attractRange = (Math.ceil(pill.height + 2 * (flare + shadowPad)) - pill.width) / 2;
 /** The pill's top in the canvas when the window isn't held in by the screen's top or bottom. */
 const restTop = (canvas.height - pill.height) / 2;
 
@@ -76,7 +74,7 @@ export const dropParts = ({
   const k = kappa;
   const r = pill.radius;
   const width = reach + Math.min(gap, 0) * 0.8;
-  const x0 = clamp(gap, 0, attractRange);
+  const x0 = Math.max(gap, 0);
   const mid = top + pill.height / 2;
   const flip = (y: number) => 2 * mid - y;
 

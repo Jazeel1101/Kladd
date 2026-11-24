@@ -1,5 +1,6 @@
 import { app } from "electron";
 import { Effect, Layer } from "effect";
+import { registerScreenshotScheme } from "./screenshotProtocol";
 
 /** Waits for Electron to be ready and applies app-wide rules. Window layers depend on this. */
 export const ElectronAppLive = Layer.effectDiscard(
@@ -11,6 +12,8 @@ export const ElectronAppLive = Layer.effectDiscard(
       contents.on("will-navigate", (navigation) => navigation.preventDefault());
       contents.setWindowOpenHandler(() => ({ action: "deny" }));
     });
+    // Custom schemes must be registered before the app is ready.
+    registerScreenshotScheme();
     yield* Effect.promise(() => app.whenReady());
     // Kladd is overlays only: the pill is its presence, so no Dock icon or app-switcher entry.
     app.dock?.hide();

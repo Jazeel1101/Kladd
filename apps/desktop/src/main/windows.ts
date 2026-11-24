@@ -38,6 +38,11 @@ interface WindowSpec {
   readonly onTop?: true;
   /** Where the window opens when the caller gives no bounds. */
   readonly position: (size: Size, workArea: Rect) => { x: number; y: number };
+  /**
+   * A window that only plays an animation over everything, the menu bar and pill included: it
+   * never takes the pointer or focus, and keeps animating while it is hidden.
+   */
+  readonly effect?: true;
 }
 
 /**
@@ -46,16 +51,23 @@ interface WindowSpec {
 const windowTable: Record<WindowKind, WindowSpec> = {
   pill: {
     // Matches the notch's SVG canvas (apps/ui/src/pill/notchShape.ts): the notch plus room to pull
-    // it from the wall. The UI moves it while the user drags the notch.
-    size: { width: 194, height: 194 },
+    // it from the wall and for its screenshot tray. The UI moves it while the user drags the notch.
+    size: { width: 560, height: 560 },
     overlay: true,
     noShadow: true,
     clickThrough: true,
     onTop: true,
-    // Docked on the left screen edge, four fifths down.
+    // Docked on the left screen edge, four fifths down, and kept inside the work area as the pill
+    // keeps it when it moves it (frameAt in apps/ui/src/pill/notchPlacement.ts): the pill reads its
+    // place from where the window starts.
     position: (size, area) => ({
       x: area.x,
-      y: Math.round(area.y + area.height * 0.8 - size.height / 2),
+      y: Math.round(
+        Math.min(
+          Math.max(area.y + area.height * 0.8 - size.height / 2, area.y),
+          area.y + area.height - size.height,
+        ),
+      ),
     }),
   },
   zones: {
@@ -82,6 +94,14 @@ const windowTable: Record<WindowKind, WindowSpec> = {
     size: { width: 640, height: 480 },
     overlay: false,
     position: centred,
+  },
+  flight: {
+    // Always shown over the whole main display (core's Screenshots); this is only the fallback.
+    size: { width: 1440, height: 900 },
+    overlay: true,
+    noShadow: true,
+    position: () => ({ x: 0, y: 0 }),
+    effect: true,
   },
 };
 
@@ -116,25 +136,36 @@ const overlayOptions = {
   type: "panel",
 } satisfies Electron.BrowserWindowConstructorOptions;
 
+/** Where a window opens when the caller gives no bounds. */
+const defaultBounds = (spec: WindowSpec, area: Rect): Rect =>
+  spec.fill ? area : { ...spec.size, ...spec.position(spec.size, area) };
+
 const createWindow = (spec: WindowSpec) => {
   const window = new BrowserWindow({
     ...(spec.overlay ? overlayOptions : { title: "Kladd" }),
     ...(spec.noShadow ? { hasShadow: false } : {}),
-    ...spec.size,
+    ...(spec.effect ? { focusable: false, enableLargerThanScreen: true } : {}),
+    // Already where it opens, so its UI reads its real position while it loads (the pill does).
+    ...defaultBounds(spec, workArea(null)),
     show: false,
     webPreferences: {
       preload: preloadPath,
       contextIsolation: true,
       sandbox: true,
       nodeIntegration: false,
+      backgroundThrottling: spec.effect !== true,
     },
   });
   if (spec.overlay) {
-    // The relative level lifts the pill one step above the other overlays (macOS only).
-    window.setAlwaysOnTop(true, "floating", spec.onTop ? 1 : 0);
+    // Effects go above the menu bar and every other overlay, the pill included, so they can fly
+    // into them. The relative level lifts the pill one step above the other overlays (macOS only).
+    if (spec.effect) window.setAlwaysOnTop(true, "screen-saver");
+    else window.setAlwaysOnTop(true, "floating", spec.onTop ? 1 : 0);
     window.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   }
   if (spec.clickThrough) window.setIgnoreMouseEvents(true, { forward: true });
+  // Effects never take the pointer, not even to see it move.
+  if (spec.effect) window.setIgnoreMouseEvents(true);
   return window;
 };
 
@@ -192,8 +223,7 @@ export const OverlayWindowsLive = Layer.effect(
       const spec = windowTable[kind];
       const window = yield* get(kind);
       const area = workArea(bounds ?? null);
-      const target =
-        bounds ?? (spec.fill ? area : { ...spec.size, ...spec.position(spec.size, area) });
+      const target = bounds ?? defaultBounds(spec, area);
       // Animate only moves of a window that is already on screen.
       window.setBounds(target, window.isVisible());
       if (spec.overlay) {
@@ -234,6 +264,7 @@ export const OverlayWindowsLive = Layer.effect(
       setClickThrough,
       size: (kind) => windowTable[kind].size,
       workArea: (near) => Effect.sync(() => workArea(near)),
+      mainDisplay: Effect.sync(() => screen.getPrimaryDisplay().bounds),
     });
   }),
 );

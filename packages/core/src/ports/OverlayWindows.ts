@@ -17,6 +17,8 @@ export class OverlayWindows extends Context.Service<
     readonly moveTo: (kind: WindowKind, position: Point) => Effect.Effect<void>;
     /** Lets clicks pass through the window to the apps below; it still sees the pointer move. */
     readonly setClickThrough: (kind: WindowKind, clickThrough: boolean) => Effect.Effect<void>;
+    /** The whole main display, menu bar included: what ScreenCapture.screenshot captures. */
+    readonly mainDisplay: Effect.Effect<Rect>;
     readonly size: (kind: WindowKind) => Size;
     /** Work area (screen minus Dock and menu bar) of the display nearest `rect`, or the main display. */
     readonly workArea: (rect: Rect | null) => Effect.Effect<Rect>;

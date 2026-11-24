@@ -4,6 +4,9 @@ import {
   OpenableWindow,
   Point,
   RecordingSession,
+  ScreenshotId,
+  ScreenshotSlot,
+  ScreenshotTray,
 } from "@kladd/domain";
 import { Schema } from "effect";
 import { Rpc, RpcGroup } from "effect/rpc";
@@ -26,6 +29,15 @@ export class KladdRpcs extends RpcGroup.make(
   }),
   /** Pops up the pill's native menu: start/stop recording, show the logging overlay, Settings, Quit. */
   Rpc.make("OpenPillMenu"),
+  /** The screenshot in flight and the attached ones, then every change. ⌃⇧C takes one. */
+  Rpc.make("WatchScreenshots", {
+    success: ScreenshotTray,
+    stream: true,
+  }),
+  /** The flight window's screenshot has dropped into the pill. */
+  Rpc.make("LandScreenshot", { payload: { id: ScreenshotId } }),
+  /** Where a ⌃⇧C screenshot can land in the pill's tray. The pill sends it whenever it comes to rest. */
+  Rpc.make("SetScreenshotSlot", { payload: { slot: ScreenshotSlot } }),
   Rpc.make("ShowWindow", { payload: { kind: OpenableWindow } }),
   Rpc.make("HideWindow", { payload: { kind: ClosableWindow } }),
   /** Moves the pill window's top-left corner to `position` at once: the UI is dragging the pill. */

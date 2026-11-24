@@ -10,7 +10,9 @@ import { showWindowAtom } from "../windows/atoms";
 import { openMenuAtom } from "./atoms";
 import type { Orientation, Wall } from "./notchPlacement";
 import { attractRange, canvas, dropParts, dropPath } from "./notchShape";
+import { roundedPath, trayRects } from "./intake";
 import { useNotchDrag } from "./useNotchDrag";
+import { useScreenshotIntake } from "./useScreenshotIntake";
 
 const formatElapsed = (duration: Duration.Duration): string => {
   // Clamped: the first render after a start can read a clock from before it.
@@ -40,9 +42,10 @@ const path = (d: string) => `path("${d}")`;
  * The resting shapes, read by the `.notch-drop` rules in styles.css: docked ones swell on hover and
  * squish on press; a floating pill stays as it is.
  */
-const restingVars = (docked: boolean, along: number): ShapeVars => {
+const restingVars = (docked: boolean, offset: number, along: number): ShapeVars => {
   if (!docked) {
-    const plain = path(dropPath({ gap: attractRange, top: along }));
+    // Shaped as if out of every wall's reach, wherever it sits in the window.
+    const plain = path(dropPath({ gap: offset, top: along, shapeGap: attractRange }));
     return { "--drop-rest": plain, "--drop-hover": plain, "--drop-press": plain };
   }
   return {
@@ -165,8 +168,9 @@ const RecordIndicator = ({ recording }: { readonly recording: boolean }) => (
 /**
  * RecordingPill: Kladd's only presence, a notch of liquid docked on a screen edge (a column on the
  * sides, a row on the bottom) or floating. Holds the expanded view, the recording indicator
- * and screenshot. Drag it to move it: it is a plain pill in the open, an edge pulls it in when it
- * comes close, and a ghost shows where it will dock. Right-click opens the menu.
+ * and screenshot, and opens to take in a ⌃⇧C screenshot (src/pill/intake.ts). Drag it to move it:
+ * it is a plain pill in the open, an edge pulls it in when it comes close, and a ghost shows where
+ * it will dock. Right-click opens the menu.
  */
 export const RecordingPill = () => {
   const recording = useAtomValue(recordingAtom);
@@ -177,14 +181,23 @@ export const RecordingPill = () => {
   const { frame, moving, liquid, turns, handlers } = useNotchDrag();
   const { box, drawWall, orientation } = frame;
 
+  const intake = useScreenshotIntake(frame);
   const resting = useMemo(
-    () => restingVars(frame.wall !== null, frame.along),
-    [frame.wall, frame.along],
+    () => restingVars(frame.wall !== null, frame.offset, frame.along),
+    [frame.wall, frame.offset, frame.along],
   );
+  const tray = intake.landing === null ? null : trayRects(frame, intake.landing);
+  const trayVars: ShapeVars | null =
+    tray === null
+      ? null
+      : {
+          "--tray-shut": path(roundedPath(tray.shut)),
+          "--tray-open": path(roundedPath(tray.open)),
+        };
   // While it moves, the wall's liquid and the pill are drawn apart: in a corner the pill tilts and
   // the wall's liquid doesn't, and once the pill leaves the wall only the pill follows it.
   const parts = dropParts({
-    gap: frame.gap,
+    gap: frame.offset,
     top: frame.along,
     shapeGap: liquid.shapeGap,
     lean: liquid.attached,
@@ -202,6 +215,7 @@ export const RecordingPill = () => {
       className={cn(
         "notch pointer-events-none relative h-screen w-screen touch-none select-none",
         moving && "live",
+        intake.closing && "closing",
       )}
       {...handlers}
       onContextMenu={(event) => {
@@ -252,6 +266,11 @@ export const RecordingPill = () => {
                 floodOpacity="0.32"
               />
             </filter>
+            {trayVars !== null && (
+              <clipPath id="tray-clip">
+                <path className={cn("notch-tray", intake.open && "open")} style={trayVars} />
+              </clipPath>
+            )}
           </defs>
           {/* The shadow sits outside the turn, so it always falls down the screen. */}
           <g filter="url(#drop-shadow)">
@@ -264,7 +283,19 @@ export const RecordingPill = () => {
               transform={tilted}
               fill={liquidColor}
             />
+            {trayVars !== null && (
+              <path
+                className={cn("notch-tray", intake.open && "open")}
+                style={trayVars}
+                fill={liquidColor}
+                onTransitionEnd={intake.shut}
+              />
+            )}
           </g>
+          {/* In the tray: it shows only what the tray covers, so the tray hides it as it shuts. */}
+          {intake.image !== null && (
+            <image {...intake.image} preserveAspectRatio="none" clipPath="url(#tray-clip)" />
+          )}
         </svg>
 
         <div

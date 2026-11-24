@@ -2,6 +2,9 @@ import { assert, describe, it } from "@effect/vitest";
 import { centerAtGap, clampCenter, frameAt, restingCenter, zoneAt } from "./notchPlacement";
 import { attractRange, canvas, flare, pill } from "./notchShape";
 
+/** Where a floating pill sits in its window, centred. */
+const inset = (canvas.width - pill.width) / 2;
+
 const area = { left: 0, top: 25, right: 1440, bottom: 900 };
 const middle = { x: 720, y: 460 };
 
@@ -111,8 +114,17 @@ describe("frameAt", () => {
       x: middle.x - canvas.width / 2,
       y: middle.y - canvas.height / 2,
     });
+    assert.strictEqual(frame.offset, inset);
+    assert.strictEqual(frame.box.left, inset);
+  });
+
+  it("draws a floating pill where it sits when the screen's edge holds its window in", () => {
+    const frame = frameAt({ x: area.left + 123, y: 460 }, "column", null, area);
+    assert.strictEqual(frame.window.x, area.left);
+    assert.strictEqual(frame.box.left, 100);
+    assert.strictEqual(frame.offset, frame.box.left);
+    // Still out of every wall's reach, as far as the wall's liquid is concerned.
     assert.strictEqual(frame.gap, attractRange);
-    assert.strictEqual(frame.box.left, attractRange);
   });
 
   it("turns a floating pill into a row about its centre, still plain", () => {
@@ -120,7 +132,7 @@ describe("frameAt", () => {
     const row = frameAt(middle, "row", null, area);
     assert.deepStrictEqual(row.window, column.window);
     assert.strictEqual(row.drawWall, "top");
-    assert.strictEqual(row.box.top, attractRange);
+    assert.strictEqual(row.box.top, inset);
     assert.strictEqual(row.along, row.box.left);
   });
 
