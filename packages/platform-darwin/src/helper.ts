@@ -64,7 +64,7 @@ export const captureResult = (result: { stderr: string; exitCode: number }) =>
         );
 
 /**
- * Starts a long-running capture command (`record`, `session`) and succeeds once it prints
+ * Starts a long-running capture command (`record`, `session`, `clip`) and succeeds once it prints
  * "recording". `stop` sends SIGINT, which makes the helper finish its files, and waits for the exit.
  * Closing the scope without `stop` does the same and waits, but can't report a failure.
  */

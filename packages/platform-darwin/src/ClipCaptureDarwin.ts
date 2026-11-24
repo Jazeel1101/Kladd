@@ -1,13 +1,32 @@
 import { ClipCapture } from "@kladd/core";
-import { ScreenCaptureFailed } from "@kladd/domain";
+import { excludedApps } from "@kladd/domain";
 import { Effect, Layer } from "effect";
-import type { CaptureHelper } from "./helper";
+import { ChildProcessSpawner } from "effect/process";
+import { type CaptureHelper, startCapture } from "./helper";
 
-/** macOS ClipCapture: one long-running `kladd-capture clip` per clip. */
-export const ClipCaptureDarwin = (_helper: CaptureHelper) =>
-  Layer.succeed(
+/**
+ * macOS ClipCapture: one long-running `kladd-capture clip` per clip
+ * (../native/Sources/KladdCapture/Clip.swift), which also draws the ink. See
+ * docs/internals/session-capture.md.
+ */
+export const ClipCaptureDarwin = (helper: CaptureHelper) =>
+  Layer.effect(
     ClipCapture,
-    ClipCapture.of({
-      start: () => Effect.fail(new ScreenCaptureFailed({ reason: "not implemented" })),
+    Effect.gen(function* () {
+      const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+
+      const start = Effect.fn("ClipCaptureDarwin.start")(function* (dir: string) {
+        return yield* startCapture(spawner, helper, [
+          "clip",
+          "--dir",
+          dir,
+          "--exclude-pid",
+          String(helper.excludePid),
+          "--exclude-apps",
+          JSON.stringify(excludedApps),
+        ]);
+      });
+
+      return ClipCapture.of({ start });
     }),
   );
