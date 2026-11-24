@@ -1,4 +1,4 @@
-// Runs the session's writers on synthetic input, without a display: `vp run @kladd/platform-darwin#test:native`.
+// Runs the clip and session writers on synthetic input, without a display: `vp run @kladd/platform-darwin#test:native`.
 
 import AVFoundation
 import CoreMedia
@@ -53,12 +53,12 @@ func sampleTimes(_ url: URL) async throws -> [Double] {
 }
 
 /// Paced like the stream: an input that expects real-time data refuses frames sent faster.
-func append(_ video: SessionVideo, at time: CMTime) async throws {
+func append(_ video: ClipVideo, at time: CMTime) async throws {
   video.append(frame(at: time))
   try await Task.sleep(for: .milliseconds(30))
 }
 
-func finish(_ video: SessionVideo, at end: CMTime) async throws {
+func finish(_ video: ClipVideo, at end: CMTime) async throws {
   let error: Error? = await withCheckedContinuation { done in video.finish(at: end) { done.resume(returning: $0) } }
   if let error { throw error }
 }
@@ -67,7 +67,7 @@ let step = CMTime(value: 1, timescale: videoFps)
 
 @Test func everyFrameReachesTheVideo() async throws {
   let url = try tempDir().appendingPathComponent("screen.mp4")
-  let video = SessionVideo(url: url)
+  let video = ClipVideo(url: url)
   let start = hostNow()
   for index in 0..<6 { try await append(video, at: start + CMTimeMultiply(step, multiplier: Int32(index))) }
   try await finish(video, at: start + CMTime(seconds: 2, preferredTimescale: 600))
@@ -79,7 +79,7 @@ let step = CMTime(value: 1, timescale: videoFps)
 
 @Test func heldFramesAreLeftOut() async throws {
   let url = try tempDir().appendingPathComponent("screen.mp4")
-  let video = SessionVideo(url: url)
+  let video = ClipVideo(url: url)
   let start = hostNow()
   try await append(video, at: start)
   video.hold()

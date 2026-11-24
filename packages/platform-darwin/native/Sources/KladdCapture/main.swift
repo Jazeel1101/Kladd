@@ -1,6 +1,6 @@
-// kladd-capture: Kladd's macOS helper for screen capture and focus. ScreenCaptureDarwin and
-// FocusTrackerDarwin (../../src) run it as a child of Kladd, so macOS attributes screen recording
-// and Accessibility permission to Kladd itself.
+// kladd-capture: Kladd's macOS helper for screen capture and focus. The *Darwin layers in ../../src
+// run it as a child of Kladd, so macOS attributes screen recording, Accessibility and microphone
+// permission to Kladd itself.
 //
 //   kladd-capture status                                  screen recording: prints "granted" or "denied"
 //   kladd-capture request --app <Kladd.app> [--timeout s] guides the user to grant it, prints the result
@@ -9,6 +9,9 @@
 //       prints "recording" once frames are written; stops on SIGINT, SIGTERM or stdin closing.
 //   kladd-capture session --dir <folder> [--exclude-pid pid] [--exclude-apps json] [--deny-paths json]
 //       writes a session folder's live files (Session.swift); prints and stops like record.
+//   kladd-capture clip --dir <clip folder> [--exclude-pid pid] [--exclude-apps json]
+//       records a clip's screen.mp4, audio.m4a and marks.jsonl, with ink (Clip.swift); prints and
+//       stops like record.
 //   kladd-capture accessibility-status                    Accessibility: prints "granted" or "denied"
 //   kladd-capture accessibility-request --app <Kladd.app> [--timeout s]
 //   kladd-capture focus [--exclude-pid pid]               prints a FocusSnapshot as JSON (Focus.swift)
@@ -37,6 +40,24 @@ func say(_ line: String) {
 func fail(_ message: String, code: Int32 = 1) -> Never {
   FileHandle.standardError.write(Data(("kladd-capture: " + message + "\n").utf8))
   exit(code)
+}
+
+var signalSources: [DispatchSourceSignal] = []
+
+/// Calls `stop` on the main queue on SIGINT, SIGTERM or stdin closing. Stdin closing means Kladd
+/// went away: a long-running command then finishes its files rather than leave them cut off.
+func stopOn(_ stop: @escaping () -> Void) {
+  for sig in [SIGINT, SIGTERM] {
+    signal(sig, SIG_IGN)
+    let source = DispatchSource.makeSignalSource(signal: sig, queue: .main)
+    source.setEventHandler(handler: stop)
+    source.resume()
+    signalSources.append(source)
+  }
+  Thread.detachNewThread {
+    while readLine() != nil {}
+    DispatchQueue.main.async(execute: stop)
+  }
 }
 
 func option(_ name: String, in args: [String]) -> String? {
@@ -233,24 +254,12 @@ final class Recorder: NSObject, SCStreamDelegate, SCRecordingOutputDelegate {
 }
 
 let recorder = Recorder()
-var signalSources: [DispatchSourceSignal] = []
 
 func runRecord(_ args: [String]) async {
   guard let out = option("--out", in: args) else { fail("record needs --out <file.mov>", code: exitUsage) }
   requireGranted()
 
-  for sig in [SIGINT, SIGTERM] {
-    signal(sig, SIG_IGN)
-    let source = DispatchSource.makeSignalSource(signal: sig, queue: .main)
-    source.setEventHandler { recorder.stop() }
-    source.resume()
-    signalSources.append(source)
-  }
-  // Stdin closing means Kladd went away: finish the file rather than leave it unreadable.
-  Thread.detachNewThread {
-    while readLine() != nil {}
-    DispatchQueue.main.async { recorder.stop() }
-  }
+  stopOn { recorder.stop() }
 
   do {
     try await recorder.start(out: out, excludePid: option("--exclude-pid", in: args).flatMap { pid_t($0) })
@@ -289,9 +298,12 @@ Task { @MainActor in
     await runRecord(args)
   case "session":
     await runSession(args)
+  case "clip":
+    await runClip(args)
   default:
     fail(
       "usage: kladd-capture status | request --app <path> | screenshot --out <file> | record --out <file>"
+        + " | session --dir <folder> | clip --dir <folder>"
         + " | accessibility-status | accessibility-request --app <path> | focus [--exclude-pid pid]"
         + " | watch-focus [--exclude-pid pid]",
       code: exitUsage)
