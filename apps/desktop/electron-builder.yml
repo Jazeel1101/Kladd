@@ -16,6 +16,8 @@ forceCodeSigning: true
 mac:
   category: public.app-category.productivity
   identity: Kladd Self-Signed
+  # The capture helper needs ScreenCaptureKit's SCRecordingOutput (macOS 15).
+  minimumSystemVersion: "15.0"
   # Only notarization needs the hardened runtime, and it breaks library loading without a Team ID.
   hardenedRuntime: false
   notarize: false

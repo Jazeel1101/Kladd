@@ -74,12 +74,19 @@ func pixelConfiguration(for display: SCDisplay) -> SCStreamConfiguration {
   let controller = PermissionFlow.makeController()
   controller.authorize(pane: .screenRecording, suggestedAppURLs: [URL(fileURLWithPath: appPath)])
 
+  var finished = false
   let finish: @MainActor () -> Void = {
+    guard !finished else { return }
+    finished = true
     controller.closePanel()
     say(CGPreflightScreenCaptureAccess() ? "granted" : "denied")
     exit(0)
   }
-  // Done when the user grants it, quits System Settings, or gives up.
+  // Done when the user grants it, closes PermissionFlow's panel (the only window this process
+  // has), quits System Settings, or gives up.
+  NotificationCenter.default.addObserver(
+    forName: NSWindow.willCloseNotification, object: nil, queue: .main
+  ) { _ in MainActor.assumeIsolated { finish() } }
   Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { _ in
     MainActor.assumeIsolated { if CGPreflightScreenCaptureAccess() { finish() } }
   }

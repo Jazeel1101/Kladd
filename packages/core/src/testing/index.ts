@@ -39,7 +39,7 @@ const screenCaptureTest = (
         permission: Effect.andThen(pause, Ref.get(current)),
         requestPermission: Ref.set(current, afterRequest).pipe(Effect.as(afterRequest)),
         screenshot: () => capture,
-        recordVideo: () => capture,
+        recordVideo: () => Effect.as(capture, { stop: Effect.void }),
       });
     }),
   );

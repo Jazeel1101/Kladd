@@ -5,6 +5,11 @@ import type {
 } from "@kladd/domain";
 import { Context, type Effect, type Scope } from "effect";
 
+/** A screen video being recorded by ScreenCapture.recordVideo. */
+export interface VideoRecording {
+  readonly stop: Effect.Effect<void, ScreenCaptureFailed>;
+}
+
 /**
  * Port: screen capture permission, screenshots and screen video. Implemented per OS in
  * packages/platform-<os>. Captures leave out Kladd's own windows. To ask for permission only when
@@ -23,11 +28,16 @@ export class ScreenCapture extends Context.Service<
       file: string,
     ) => Effect.Effect<void, ScreenCapturePermissionDenied | ScreenCaptureFailed>;
     /**
-     * Records the main display to a video at `file` until the scope closes, then finishes the file.
-     * Succeeds once recording has started.
+     * Starts recording the main display to a video at `file`; succeeds once recording has started.
+     * `stop` finishes the file and fails if it could not. Closing the scope stops it too, but can't
+     * report a failure.
      */
     readonly recordVideo: (
       file: string,
-    ) => Effect.Effect<void, ScreenCapturePermissionDenied | ScreenCaptureFailed, Scope.Scope>;
+    ) => Effect.Effect<
+      VideoRecording,
+      ScreenCapturePermissionDenied | ScreenCaptureFailed,
+      Scope.Scope
+    >;
   }
 >()("kladd/core/ScreenCapture") {}

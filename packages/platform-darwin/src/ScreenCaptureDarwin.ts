@@ -1,5 +1,9 @@
 import { ScreenCapture } from "@kladd/core";
-import { ScreenCaptureFailed, ScreenCapturePermissionDenied } from "@kladd/domain";
+import {
+  ScreenCaptureFailed,
+  ScreenCapturePermissionDenied,
+  type ScreenCapturePermission,
+} from "@kladd/domain";
 import { Effect, Fiber, Layer, Option, Stream } from "effect";
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
 
@@ -57,14 +61,32 @@ export const ScreenCaptureDarwin = (helper: CaptureHelper) =>
                 new ScreenCaptureFailed({ reason: result.stderr || `exit ${result.exitCode}` }),
               );
 
+      /** `status` and `request` print the permission; anything else means the helper broke. */
+      const readPermission = ({
+        stdout,
+        stderr,
+        exitCode,
+      }: {
+        stdout: string;
+        stderr: string;
+        exitCode: number;
+      }): Effect.Effect<ScreenCapturePermission, ScreenCaptureFailed> => {
+        if (exitCode === 0 && stdout === "granted") return Effect.succeed("granted");
+        if (exitCode === 0 && stdout === "denied") return Effect.succeed("denied");
+        return Effect.fail(
+          new ScreenCaptureFailed({ reason: stderr || `exit ${exitCode}: ${stdout}` }),
+        );
+      };
+
       const permission = run(["status"]).pipe(
-        Effect.map((result) => (result.stdout === "granted" ? "granted" : "denied")),
+        Effect.flatMap(readPermission),
         Effect.withSpan("ScreenCaptureDarwin.permission"),
       );
 
-      // The helper exits when the user grants it, quits System Settings, or after 5 minutes.
-      // Permission is read again in a fresh process: macOS may only apply it to new processes.
+      // The helper exits when the user grants it, closes the panel, quits System Settings, or after
+      // 5 minutes. Permission is read again in a fresh process: macOS may only apply it to new ones.
       const requestPermission = run(["request", "--app", helper.appBundle]).pipe(
+        Effect.flatMap(readPermission),
         Effect.andThen(permission),
         Effect.withSpan("ScreenCaptureDarwin.requestPermission"),
       );
@@ -76,7 +98,8 @@ export const ScreenCaptureDarwin = (helper: CaptureHelper) =>
       });
 
       const recordVideo = Effect.fn("ScreenCaptureDarwin.recordVideo")(function* (file: string) {
-        // Closing the scope sends SIGINT; the helper finishes the file and exits, and the scope waits.
+        // SIGINT makes the helper finish the file and exit. Closing the scope without `stop` does
+        // the same and waits, but can't report a failure.
         const handle = yield* spawner
           .spawn(
             ChildProcess.make(helper.path, ["record", "--out", file, "--exclude-pid", pid], {
@@ -86,19 +109,40 @@ export const ScreenCaptureDarwin = (helper: CaptureHelper) =>
           )
           .pipe(Effect.mapError(failed));
         const stderr = yield* Effect.forkScoped(text(handle.stderr));
+        const exited = Effect.gen(function* () {
+          return yield* toResult({
+            exitCode: Number(yield* handle.exitCode.pipe(Effect.mapError(failed))),
+            stderr: yield* Fiber.join(stderr).pipe(Effect.orElseSucceed(() => "")),
+          });
+        });
+
         const first = yield* handle.stdout.pipe(
           Stream.decodeText(),
           Stream.splitLines,
           Stream.runHead,
           Effect.mapError(failed),
         );
-        if (Option.contains(first, "recording")) return;
-        // Anything else means the helper exited without recording.
-        yield* toResult({
-          exitCode: Number(yield* handle.exitCode.pipe(Effect.mapError(failed))),
-          stderr: yield* Fiber.join(stderr).pipe(Effect.orElseSucceed(() => "")),
-        });
-        return yield* new ScreenCaptureFailed({ reason: "kladd-capture exited before recording" });
+        if (!Option.contains(first, "recording")) {
+          // Anything else means the helper exited without recording.
+          yield* exited;
+          return yield* new ScreenCaptureFailed({
+            reason: "kladd-capture exited before recording",
+          });
+        }
+
+        // Killing an already-exited helper fails; its exit status is the real answer either way.
+        const stop = handle.kill({ killSignal: "SIGINT" }).pipe(
+          Effect.ignore,
+          Effect.andThen(exited),
+          // The helper only exits with 77 before it records, so a later failure is never "denied".
+          Effect.catchTag("ScreenCapturePermissionDenied", () =>
+            Effect.fail(
+              new ScreenCaptureFailed({ reason: "recording stopped: permission revoked" }),
+            ),
+          ),
+          Effect.withSpan("ScreenCaptureDarwin.recordVideo.stop"),
+        );
+        return { stop };
       });
 
       return ScreenCapture.of({ permission, requestPermission, screenshot, recordVideo });
