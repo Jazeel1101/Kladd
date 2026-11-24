@@ -1,5 +1,5 @@
 import { ScreenshotFiles } from "@kladd/core";
-import type { ScreenshotId } from "@kladd/domain";
+import { ScreenCaptureFailed, type ScreenshotId } from "@kladd/domain";
 import { Effect, FileSystem, Layer, Path } from "effect";
 import { StorageConfig } from "../StorageConfig";
 
@@ -12,9 +12,16 @@ export const ScreenshotFilesDir = Layer.effect(
     const dir = path.join((yield* StorageConfig).dataDir, "screenshots");
 
     const file = Effect.fn("ScreenshotFilesDir.file")(function* (id: ScreenshotId) {
-      yield* fs.makeDirectory(dir, { recursive: true });
+      yield* fs
+        .makeDirectory(dir, { recursive: true })
+        .pipe(
+          Effect.mapError(
+            (error) =>
+              new ScreenCaptureFailed({ reason: `cannot create ${dir}: ${error.message}` }),
+          ),
+        );
       return path.join(dir, `${id}.png`);
-    }, Effect.orDie);
+    });
 
     return ScreenshotFiles.of({ file });
   }),

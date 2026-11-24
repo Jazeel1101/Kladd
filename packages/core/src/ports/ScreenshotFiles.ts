@@ -1,4 +1,4 @@
-import type { ScreenshotId } from "@kladd/domain";
+import type { ScreenCaptureFailed, ScreenshotId } from "@kladd/domain";
 import { Context, type Effect } from "effect";
 
 /**
@@ -8,7 +8,7 @@ import { Context, type Effect } from "effect";
 export class ScreenshotFiles extends Context.Service<
   ScreenshotFiles,
   {
-    /** The PNG file for `id`. Its directory exists once this succeeds. */
-    readonly file: (id: ScreenshotId) => Effect.Effect<string>;
+    /** The PNG file for `id`. Its directory exists once this succeeds; if it can't be made, fails. */
+    readonly file: (id: ScreenshotId) => Effect.Effect<string, ScreenCaptureFailed>;
   }
 >()("kladd/core/ScreenshotFiles") {}

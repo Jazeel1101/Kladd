@@ -27,10 +27,8 @@ export const ScreenshotProtocolLive = Layer.effectDiscard(
       const id = Schema.decodeOption(ScreenshotId)(new URL(url).hostname);
       if (Option.isNone(id)) return notFound();
       const file = yield* files.file(id.value);
-      return yield* Effect.tryPromise(() => net.fetch(pathToFileURL(file).toString())).pipe(
-        Effect.orElseSucceed(notFound),
-      );
-    });
+      return yield* Effect.tryPromise(() => net.fetch(pathToFileURL(file).toString()));
+    }, Effect.orElseSucceed(notFound));
 
     yield* Effect.acquireRelease(
       Effect.sync(() =>
