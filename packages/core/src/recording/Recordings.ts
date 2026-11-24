@@ -31,8 +31,8 @@ export class Recordings extends Context.Service<
   Recordings,
   {
     /**
-     * Asks for screen capture permission first if Kladd doesn't have it (required), then for
-     * Accessibility (optional: it places the logging overlay next to the text).
+     * Asks for screen capture permission first if Kladd doesn't have it. Once recording, asks for
+     * Accessibility in the background (optional: it places the logging overlay next to the text).
      */
     readonly start: Effect.Effect<
       RecordingSession,
@@ -56,6 +56,9 @@ export class Recordings extends Context.Service<
       const current = yield* SubscriptionRef.make(yield* store.active);
       // Start and stop check, then change, the active recording; one at a time so they can't interleave.
       const exclusive = Semaphore.withPermit(yield* Semaphore.make(1));
+      // The Accessibility prompt outlives start, and only one is shown at a time.
+      const layerScope = yield* Effect.scope;
+      const asking = yield* Semaphore.make(1);
 
       const start = Effect.gen(function* () {
         const active = yield* SubscriptionRef.get(current);
@@ -64,13 +67,17 @@ export class Recordings extends Context.Service<
         }
         // Inside the permit, so a second start waits for this one's permission prompt.
         yield* requireScreenCapture.pipe(Effect.provideService(ScreenCapture, capture));
-        yield* askForAccessibility.pipe(Effect.provideService(FocusTracker, focus));
         const session = new RecordingSession({
           id: yield* ids.recordingSessionId,
           startedAt: yield* DateTime.now,
         });
         yield* store.save(session);
         yield* SubscriptionRef.set(current, Option.some(session));
+        yield* askForAccessibility.pipe(
+          Effect.provideService(FocusTracker, focus),
+          Semaphore.withPermitsIfAvailable(asking, 1),
+          Effect.forkIn(layerScope),
+        );
         return session;
       }).pipe(exclusive, Effect.withSpan("Recordings.start"));
 

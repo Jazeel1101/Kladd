@@ -24,6 +24,13 @@ const withCapture = (
     Layer.provideMerge(Layer.mergeAll(focus, AppAdaptersTest(), OverlayWindowsTest)),
   );
 
+/** Accessibility is missing, and the user leaves its prompt open. */
+const promptLeftOpen = FocusTrackerTest(undefined, {
+  before: "denied",
+  after: "denied",
+  answer: Effect.never,
+});
+
 describe("Recordings", () => {
   it.effect("start creates an active RecordingSession", () =>
     Effect.gen(function* () {
@@ -53,20 +60,26 @@ describe("Recordings", () => {
     }).pipe(Effect.provide(withCapture(ScreenCaptureTest.denied))),
   );
 
-  it.effect("start asks for Accessibility when it is missing, and starts without it", () =>
+  it.effect("start asks for Accessibility in the background, without waiting for it", () =>
     Effect.gen(function* () {
       const recordings = yield* Recordings;
       yield* recordings.start;
       assert.isTrue(Option.isSome(yield* recordings.active));
+      yield* Effect.yieldNow;
       assert.strictEqual((yield* Ref.get(yield* FocusTrackerLog)).permissionRequests, 1);
-    }).pipe(
-      Effect.provide(
-        withCapture(
-          ScreenCaptureTest.granted,
-          FocusTrackerTest(undefined, { before: "denied", after: "denied" }),
-        ),
-      ),
-    ),
+    }).pipe(Effect.provide(withCapture(ScreenCaptureTest.granted, promptLeftOpen))),
+  );
+
+  it.effect("start shows one Accessibility prompt at a time", () =>
+    Effect.gen(function* () {
+      const recordings = yield* Recordings;
+      yield* recordings.start;
+      yield* Effect.yieldNow;
+      yield* recordings.stop;
+      yield* recordings.start;
+      yield* Effect.yieldNow;
+      assert.strictEqual((yield* Ref.get(yield* FocusTrackerLog)).permissionRequests, 1);
+    }).pipe(Effect.provide(withCapture(ScreenCaptureTest.granted, promptLeftOpen))),
   );
 
   it.effect("stop ends the session and opens the logging overlay", () =>

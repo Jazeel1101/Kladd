@@ -100,8 +100,9 @@ func focusSnapshot(excludePid: pid_t?) -> [String: Any] {
   snapshot["app"] = ["bundleId": bundleId, "name": front.localizedName ?? bundleId]
   guard AXIsProcessTrusted() else { return snapshot }
 
+  // Set on the system-wide element, it applies to every element; set on the app, only to the app.
+  AXUIElementSetMessagingTimeout(AXUIElementCreateSystemWide(), axTimeout)
   let app = AXUIElementCreateApplication(front.processIdentifier)
-  AXUIElementSetMessagingTimeout(app, axTimeout)
   if let window = childElement(app, kAXFocusedWindowAttribute) {
     snapshot["window"] = json(frame(window))
     if let title = attribute(window, kAXTitleAttribute) as? String, !title.isEmpty { snapshot["title"] = title }

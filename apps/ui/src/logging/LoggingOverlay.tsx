@@ -15,7 +15,7 @@ const WritingTarget = ({ info }: { info: LoggingOverlayInfo }) => {
         {parts.length === 0 ? "Ukjent app" : parts.join(" · ")}
       </p>
       <p className="text-xs text-neutral-500">
-        {info.adapter} · {info.anchored ? "ved teksten" : "ingen tekst funnet"}
+        {info.adapter} · {info.anchored ? "plassert etter fokus" : "standardplassering"}
       </p>
     </div>
   );

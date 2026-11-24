@@ -1,6 +1,6 @@
 import { assert, describe, it } from "@effect/vitest";
 import { FocusTrackingFailed, emptyFocus, makeAppAdapter, type FocusSnapshot } from "@kladd/domain";
-import { Effect, Layer, Ref, Stream } from "effect";
+import { Deferred, Effect, Fiber, Layer, Ref, Stream } from "effect";
 import {
   AppAdaptersTest,
   FocusTrackerTest,
@@ -23,7 +23,10 @@ const notesWithPage = makeAppAdapter({
   target: (f) => ({ app: "Notes", document: f.title?.replace(" – Notes", "") ?? null }),
 });
 
-const provide = (focus: FocusSnapshot | FocusTrackingFailed, adapters = AppAdaptersTest()) =>
+const provide = (
+  focus: FocusSnapshot | FocusTrackingFailed | Effect.Effect<FocusSnapshot>,
+  adapters = AppAdaptersTest(),
+) =>
   Effect.provide(
     LoggingOverlay.layer.pipe(
       Layer.provideMerge(Layer.mergeAll(FocusTrackerTest(focus), adapters, OverlayWindowsTest)),
@@ -95,6 +98,36 @@ describe("LoggingOverlay.open", () => {
         adapter: "test-fallback",
         anchored: false,
       });
+    }),
+  );
+
+  it.effect("a slow open can't move the overlay after a newer one", () =>
+    Effect.gen(function* () {
+      const firstAnswers = yield* Deferred.make<void>();
+      const calls = yield* Ref.make(0);
+      const first = { ...emptyFocus, caret: { x: 100, y: 200, width: 1, height: 16 } };
+      const second = { ...emptyFocus, caret: { x: 600, y: 200, width: 1, height: 16 } };
+      // The first focus read answers only after the second open has started.
+      const current = Ref.getAndUpdate(calls, (n) => n + 1).pipe(
+        Effect.flatMap((n) =>
+          n === 0 ? Effect.as(Deferred.await(firstAnswers), first) : Effect.succeed(second),
+        ),
+      );
+      const shown = yield* Effect.gen(function* () {
+        const overlay = yield* LoggingOverlay;
+        const slow = yield* Effect.forkChild(overlay.open);
+        yield* Effect.yieldNow;
+        const fast = yield* Effect.forkChild(overlay.open);
+        yield* Effect.yieldNow;
+        yield* Deferred.succeed(firstAnswers, undefined);
+        yield* Fiber.join(slow);
+        yield* Fiber.join(fast);
+        return yield* Ref.get(yield* OverlayWindowsLog);
+      }).pipe(provide(current));
+      assert.deepStrictEqual(
+        shown.map((s) => s.bounds?.x),
+        [109, 609],
+      );
     }),
   );
 });

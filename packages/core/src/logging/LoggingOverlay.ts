@@ -5,7 +5,7 @@ import {
   placeWithoutAnchor,
   type LoggingOverlayInfo,
 } from "@kladd/domain";
-import { Context, Effect, Layer, type Stream, SubscriptionRef } from "effect";
+import { Context, Effect, Layer, Semaphore, type Stream, SubscriptionRef } from "effect";
 import { AppAdapters } from "../ports/AppAdapters";
 import { FocusTracker } from "../ports/FocusTracker";
 import { OverlayWindows } from "../ports/OverlayWindows";
@@ -30,6 +30,8 @@ export class LoggingOverlay extends Context.Service<
       const windows = yield* OverlayWindows;
       const adapters = yield* AppAdapters;
       const info = yield* SubscriptionRef.make<LoggingOverlayInfo | null>(null);
+      // One open at a time, so a slow earlier open can't move the overlay after a newer one.
+      const oneAtATime = Semaphore.withPermit(yield* Semaphore.make(1));
 
       const open = Effect.gen(function* () {
         const snapshot = yield* focus.current.pipe(
@@ -51,7 +53,7 @@ export class LoggingOverlay extends Context.Service<
           anchored: anchor !== null,
         });
         yield* windows.show("logging", bounds);
-      }).pipe(Effect.withSpan("LoggingOverlay.open"));
+      }).pipe(oneAtATime, Effect.withSpan("LoggingOverlay.open"));
 
       return LoggingOverlay.of({ open, changes: SubscriptionRef.changes(info) });
     }),

@@ -94,17 +94,16 @@ export class FocusTrackerLog extends Context.Service<
 /**
  * Always reports `snapshot` (default: nothing known, as without Accessibility permission).
  * `permission` is what it reports before and after a request; counts requests in FocusTrackerLog.
- * Given a FocusTrackingFailed, every call fails with it.
+ * Given a FocusTrackingFailed, every call fails with it. Given an Effect, `current` runs it.
  */
 export const FocusTrackerTest = (
-  snapshot: FocusSnapshot | FocusTrackingFailed = emptyFocus,
+  snapshot: FocusSnapshot | FocusTrackingFailed | Effect.Effect<FocusSnapshot> = emptyFocus,
   permission: {
     readonly before: AccessibilityPermission;
     readonly after: AccessibilityPermission;
-  } = {
-    before: "granted",
-    after: "granted",
-  },
+    /** Runs before a request answers: Effect.never for a user who leaves the prompt open. */
+    readonly answer?: Effect.Effect<void>;
+  } = { before: "granted", after: "granted" },
 ) =>
   Layer.unwrap(
     Effect.gen(function* () {
@@ -114,13 +113,15 @@ export const FocusTrackerTest = (
       const orFail = <A>(effect: Effect.Effect<A>) =>
         failed === null ? effect : Effect.andThen(effect, Effect.fail(failed));
       const tracker = FocusTracker.of({
-        current:
-          snapshot instanceof FocusTrackingFailed
+        current: Effect.isEffect(snapshot)
+          ? snapshot
+          : snapshot instanceof FocusTrackingFailed
             ? Effect.fail(snapshot)
             : Effect.succeed(snapshot),
         permission: orFail(Ref.get(current)),
         requestPermission: orFail(
           Ref.update(log, (l) => ({ permissionRequests: l.permissionRequests + 1 })).pipe(
+            Effect.andThen(permission.answer ?? Effect.void),
             Effect.andThen(Ref.set(current, permission.after)),
             Effect.as(permission.after),
           ),
