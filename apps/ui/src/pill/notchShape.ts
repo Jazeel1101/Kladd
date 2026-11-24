@@ -33,11 +33,6 @@ const size = 560;
 export const canvas = { width: size, height: size };
 /** How far from a wall its pull starts: the wall's snap zone. Room for the docked notch's flare. */
 export const attractRange = (Math.ceil(pill.height + 2 * (flare + shadowPad)) - pill.width) / 2;
-/**
- * Where the pill sits in the canvas while it floats, centred. Also how far from a wall the window
- * meets it, so the pill starts moving inside the window there.
- */
-export const inset = (size - pill.width) / 2;
 /** The pill's top in the canvas when the window isn't held in by the screen's top or bottom. */
 const restTop = (canvas.height - pill.height) / 2;
 
@@ -79,7 +74,7 @@ export const dropParts = ({
   const k = kappa;
   const r = pill.radius;
   const width = reach + Math.min(gap, 0) * 0.8;
-  const x0 = clamp(gap, 0, inset);
+  const x0 = Math.max(gap, 0);
   const mid = top + pill.height / 2;
   const flip = (y: number) => 2 * mid - y;
 

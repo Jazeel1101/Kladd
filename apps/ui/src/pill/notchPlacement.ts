@@ -1,4 +1,4 @@
-import { attractRange, canvas, flare, inset, pill } from "./notchShape";
+import { attractRange, canvas, flare, pill } from "./notchShape";
 
 /**
  * Where the notch is on screen and what that means for drawing it. Pure: the drag hook feeds it
@@ -170,6 +170,11 @@ export interface NotchFrame {
   /** Distance from `drawWall`. Negative while the pill squishes into the wall. */
   readonly gap: number;
   /**
+   * How far the pill sits from the window's edge on `drawWall`'s side: where its shape is drawn.
+   * `gap` while docked, as the window stays against the wall; floating, wherever the window has it.
+   */
+  readonly offset: number;
+  /**
    * Degrees the pill is turned from its layout, in a corner. A row is a column turned 90°, so the
    * two layouts meet at ±45° on the corner's diagonal, turned opposite ways.
    */
@@ -188,6 +193,20 @@ export interface NotchFrame {
   /** The window's top-left corner on screen. */
   readonly window: Point;
 }
+
+/** How far `box` is from the window's edge on `wall`'s side. */
+const offsetFrom = (wall: Wall, box: NotchFrame["box"]): number => {
+  switch (wall) {
+    case "left":
+      return box.left;
+    case "right":
+      return canvas.width - box.left - box.width;
+    case "top":
+      return box.top;
+    case "bottom":
+      return canvas.height - box.top - box.height;
+  }
+};
 
 /**
  * The window is centred on the pill, but never leaves the work area: near a wall it stays against
@@ -212,11 +231,13 @@ export const frameAt = (
     height,
   };
   const tilt = wall === null ? 0 : cornerTilt(wall, center, area);
+  const drawWall = wall ?? (orientation === "column" ? "left" : "top");
   return {
     wall,
     orientation,
-    drawWall: wall ?? (orientation === "column" ? "left" : "top"),
-    gap: wall === null ? inset : gapTo(wall, center, area),
+    drawWall,
+    gap: wall === null ? attractRange : gapTo(wall, center, area),
+    offset: offsetFrom(drawWall, box),
     tilt: orientation === "column" ? tilt : -tilt,
     pull: 1 - Math.abs(tilt) / 45,
     box,

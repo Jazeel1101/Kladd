@@ -9,7 +9,7 @@ import { recordingAtom } from "../recording/atoms";
 import { showWindowAtom } from "../windows/atoms";
 import { openMenuAtom } from "./atoms";
 import type { Orientation, Wall } from "./notchPlacement";
-import { canvas, dropParts, dropPath, inset } from "./notchShape";
+import { attractRange, canvas, dropParts, dropPath } from "./notchShape";
 import { roundedPath, trayRects } from "./intake";
 import { useNotchDrag } from "./useNotchDrag";
 import { useScreenshotIntake } from "./useScreenshotIntake";
@@ -42,9 +42,10 @@ const path = (d: string) => `path("${d}")`;
  * The resting shapes, read by the `.notch-drop` rules in styles.css: docked ones swell on hover and
  * squish on press; a floating pill stays as it is.
  */
-const restingVars = (docked: boolean, along: number): ShapeVars => {
+const restingVars = (docked: boolean, offset: number, along: number): ShapeVars => {
   if (!docked) {
-    const plain = path(dropPath({ gap: inset, top: along }));
+    // Shaped as if out of every wall's reach, wherever it sits in the window.
+    const plain = path(dropPath({ gap: offset, top: along, shapeGap: attractRange }));
     return { "--drop-rest": plain, "--drop-hover": plain, "--drop-press": plain };
   }
   return {
@@ -182,8 +183,8 @@ export const RecordingPill = () => {
 
   const intake = useScreenshotIntake(frame);
   const resting = useMemo(
-    () => restingVars(frame.wall !== null, frame.along),
-    [frame.wall, frame.along],
+    () => restingVars(frame.wall !== null, frame.offset, frame.along),
+    [frame.wall, frame.offset, frame.along],
   );
   const tray = intake.landing === null ? null : trayRects(frame, intake.landing);
   const trayVars: ShapeVars | null =
@@ -196,7 +197,7 @@ export const RecordingPill = () => {
   // While it moves, the wall's liquid and the pill are drawn apart: in a corner the pill tilts and
   // the wall's liquid doesn't, and once the pill leaves the wall only the pill follows it.
   const parts = dropParts({
-    gap: frame.gap,
+    gap: frame.offset,
     top: frame.along,
     shapeGap: liquid.shapeGap,
     lean: liquid.attached,
