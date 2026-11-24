@@ -9,7 +9,7 @@ import { recordingAtom } from "../recording/atoms";
 import { showWindowAtom } from "../windows/atoms";
 import { openMenuAtom } from "./atoms";
 import type { Orientation, Wall } from "./notchPlacement";
-import { attractRange, canvas, dropParts, dropPath, pill } from "./notchShape";
+import { attractRange, canvas, dropParts, dropPath } from "./notchShape";
 import { useNotchDrag } from "./useNotchDrag";
 
 const formatElapsed = (duration: Duration.Duration): string => {
@@ -53,6 +53,8 @@ const restingVars = (docked: boolean, along: number): ShapeVars => {
 };
 
 const size = canvas.width;
+/** One flat colour for the pill, the wall's liquid and what the wall lets go of. */
+const liquidColor = "#18181b";
 
 /** Turns the shape, drawn against a left wall, to face `wall`. */
 const faceWall: Record<Wall, string> = {
@@ -193,8 +195,6 @@ export const RecordingPill = () => {
   const tilted = `rotate(${frame.tilt} ${pillCenter.x} ${pillCenter.y}) ${faceWall[drawWall]}`;
   const { residue } = liquid;
   const shapeVars: ShapeVars = moving ? { ...resting, "--drop-live": live } : resting;
-  // The pill's near edge in the shape's own (left-wall) coordinates.
-  const pillNear = Math.min(Math.max(frame.gap, 0), attractRange);
   const turn = useTurn(turns, orientation, `${pillCenter.x}px ${pillCenter.y}px`);
 
   return (
@@ -228,7 +228,7 @@ export const RecordingPill = () => {
             <path
               transform={`${faceWall[residue.wall]} translate(0 ${residue.mid}) scale(${residue.scale} ${0.6 + 0.4 * residue.scale}) translate(0 ${-residue.mid})`}
               d={residue.path}
-              fill="#121214"
+              fill={liquidColor}
             />
           </g>
         </svg>
@@ -243,18 +243,6 @@ export const RecordingPill = () => {
           aria-hidden
         >
           <defs>
-            {/* Darkest at the wall, lighter toward the pill's outer side. */}
-            <linearGradient
-              id="drop-fill"
-              gradientUnits="userSpaceOnUse"
-              x1={pillNear - 12}
-              x2={pillNear + pill.width}
-              y1="0"
-              y2="0"
-            >
-              <stop offset="0" stopColor="#0e0e10" />
-              <stop offset="1" stopColor="#242427" />
-            </linearGradient>
             <filter id="drop-shadow" x="-50%" y="-50%" width="200%" height="200%">
               <feDropShadow
                 dx="0"
@@ -268,13 +256,13 @@ export const RecordingPill = () => {
           {/* The shadow sits outside the turn, so it always falls down the screen. */}
           <g filter="url(#drop-shadow)">
             {liveWall !== null && (
-              <path transform={faceWall[drawWall]} d={liveWall} fill="url(#drop-fill)" />
+              <path transform={faceWall[drawWall]} d={liveWall} fill={liquidColor} />
             )}
             <path
               className="notch-drop pointer-events-auto"
               data-notch-hit
               transform={tilted}
-              fill="url(#drop-fill)"
+              fill={liquidColor}
             />
           </g>
         </svg>
