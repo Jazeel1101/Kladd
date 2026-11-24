@@ -19,7 +19,7 @@ import { OverlayWindowsLive, PillLive } from "./windows";
  */
 const StorageConfigLive = Layer.succeed(
   StorageConfig,
-  StorageConfig.of({ dataDir: app.getPath("userData") }),
+  StorageConfig.of({ dataDir: app.getPath("userData"), appVersion: app.getVersion() }),
 );
 
 const AppAdaptersLive = Layer.succeed(

@@ -1,16 +1,47 @@
-import type { RecordingSession } from "@kladd/domain";
+import type {
+  OverviewInput,
+  RecordingSession,
+  RecordingSessionId,
+  SessionInfo,
+} from "@kladd/domain";
 import { Context, type Effect, type Option } from "effect";
 
+/** The audio of a session folder, and where its transcript goes. */
+export interface SessionAudio {
+  readonly audio: string;
+  readonly transcript: string;
+}
+
 /**
- * Port: persists recording sessions. Implemented in packages/infra.
- * Test double: RecordingStoreTest in ../testing.
+ * Port: persists recording sessions and the files Kladd itself writes in their session folders
+ * (GLOSSARY: "opptaksmappe"); SessionCapture writes the rest. A folder is the path it returns.
+ * Implemented in packages/infra. Test double: RecordingStoreTest in ../testing.
  */
 export class RecordingStore extends Context.Service<
   RecordingStore,
   {
     readonly active: Effect.Effect<Option.Option<RecordingSession>>;
-    readonly save: (session: RecordingSession) => Effect.Effect<void>;
-    /** Forgets the active session. */
+    /**
+     * Creates the session's folder with its `session.json` (not stopped, no language yet) and
+     * makes it the active session. Returns the folder.
+     */
+    readonly save: (session: RecordingSession) => Effect.Effect<string>;
+    /** Forgets the active session; its folder stays. */
     readonly clear: Effect.Effect<void>;
+    /** The folder `save` created for `id`, if it did. */
+    readonly folder: (id: RecordingSessionId) => Effect.Effect<Option.Option<string>>;
+    /** Changes the folder's `session.json`. */
+    readonly updateInfo: (
+      folder: string,
+      update: (info: SessionInfo) => SessionInfo,
+    ) => Effect.Effect<void>;
+    /** The folder's `audio.m4a`, if the microphone recorded one. */
+    readonly audio: (folder: string) => Effect.Effect<Option.Option<SessionAudio>>;
+    /**
+     * Reads back everything `overview.md` is made from. Skips lines that don't decode, such as a
+     * last line cut off by a crash, and files that don't exist.
+     */
+    readonly read: (folder: string) => Effect.Effect<OverviewInput>;
+    readonly writeOverview: (folder: string, text: string) => Effect.Effect<void>;
   }
 >()("kladd/core/RecordingStore") {}
