@@ -88,7 +88,7 @@ func inkPath(_ points: [CGPoint], height: CGFloat) -> CGPath {
 }
 
 /// The click-through panel over the main display, and the poll that draws on it. Main queue only.
-final class InkOverlay {
+@MainActor final class InkOverlay {
   private let clock: () -> Double
   private let finished: (InkStroke) -> Void
   private var panel: NSPanel?
@@ -97,6 +97,9 @@ final class InkOverlay {
   private let liveLayer = CAShapeLayer()
   private var fading: [(layer: CAShapeLayer, since: Double)] = []
   private var timer: Timer?
+  /// KLADD_TEST_INK=1 scripts ⇧ and the pointer: one stroke from t = 1 s to 2 s, so the ink can be
+  /// checked in screen.mp4 and marks.jsonl without real input.
+  private let scripted = ProcessInfo.processInfo.environment["KLADD_TEST_INK"] != nil
 
   /// `clock` is the clip's `t`; `finished` gets each stroke once ⇧ is let go.
   init(clock: @escaping () -> Double, finished: @escaping (InkStroke) -> Void) {
@@ -127,7 +130,7 @@ final class InkOverlay {
     view.layer?.addSublayer(liveLayer)
     panel.orderFrontRegardless()
     self.panel = panel
-    let timer = Timer(timeInterval: inkPollInterval, repeats: true) { [weak self] _ in self?.poll() }
+    let timer = Timer(timeInterval: inkPollInterval, repeats: true) { [weak self] _ in MainActor.assumeIsolated { self?.poll() } }
     RunLoop.main.add(timer, forMode: .common)
     self.timer = timer
   }
@@ -150,13 +153,17 @@ final class InkOverlay {
   private func poll() {
     // Both states, as Scrawl does: the combined one also has virtual keyboards such as Karabiner's.
     let flags = CGEventSource.flagsState(.combinedSessionState).union(CGEventSource.flagsState(.hidSystemState))
-    let pointer = NSEvent.mouseLocation
-    let point = screen.contains(pointer) ? CGPoint(x: pointer.x - screen.minX, y: screen.maxY - pointer.y) : nil
+    var pointer = NSEvent.mouseLocation
     let now = clock()
-    let stroke = input.poll(
-      shift: flags.contains(.maskShift),
-      otherModifiers: !flags.isDisjoint(with: [.maskCommand, .maskControl, .maskAlternate]),
-      point: point, at: now)
+    var shift = flags.contains(.maskShift)
+    var otherModifiers = !flags.isDisjoint(with: [.maskCommand, .maskControl, .maskAlternate])
+    if scripted {
+      shift = now >= 1 && now < 2
+      otherModifiers = false
+      pointer = CGPoint(x: screen.minX + 200 + 400 * (now - 1), y: screen.maxY - 200 - 200 * (now - 1))
+    }
+    let point = screen.contains(pointer) ? CGPoint(x: pointer.x - screen.minX, y: screen.maxY - pointer.y) : nil
+    let stroke = input.poll(shift: shift, otherModifiers: otherModifiers, point: point, at: now)
 
     CATransaction.begin()
     CATransaction.setDisableActions(true)
