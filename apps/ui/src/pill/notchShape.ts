@@ -29,7 +29,7 @@ export const flare = fillet + (pill.width - pill.radius) * Math.tan(tilt);
  * column and row both fit without resizing the window, and wide enough for the tray to slide out
  * with a screenshot beside the pill (src/pill/intake.ts).
  */
-const size = 340;
+const size = 560;
 export const canvas = { width: size, height: size };
 /** How far from a wall its pull starts: the wall's snap zone. Room for the docked notch's flare. */
 export const attractRange = (Math.ceil(pill.height + 2 * (flare + shadowPad)) - pill.width) / 2;

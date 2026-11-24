@@ -261,7 +261,7 @@ export const useNotchDrag = () => {
   // Only at rest: while it moves, the frame changes every frame.
   useEffect(() => {
     if (moving) return;
-    setScreenshotSlot({ payload: { slot: screenshotSlot(frame) } });
+    setScreenshotSlot({ payload: { slot: screenshotSlot(frame, workArea()) } });
   }, [frame, moving, setScreenshotSlot]);
 
   const view = viewLiquid(liquid, frame, performance.now());

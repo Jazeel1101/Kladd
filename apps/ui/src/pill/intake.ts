@@ -1,5 +1,5 @@
 import type { Rect, ScreenshotSlot } from "@kladd/domain";
-import type { NotchFrame, Wall } from "./notchPlacement";
+import type { Area, NotchFrame, Wall } from "./notchPlacement";
 import { canvas, pill } from "./notchShape";
 
 /**
@@ -15,55 +15,74 @@ const edgeRoom = 34;
 /** Room between the screenshot and the open tray's edges. */
 const pad = 8;
 
-/** A rect drawn against a left wall, turned to face `wall` in the window (see `faceWall`). */
-const toWindow = (wall: Wall, r: Rect): Rect => {
-  const turned = { x: r.y, width: r.height, height: r.width };
-  switch (wall) {
+/** The pill's box in the window. */
+const boxOf = ({ box }: NotchFrame): Rect => ({
+  x: box.left,
+  y: box.top,
+  width: box.width,
+  height: box.height,
+});
+
+/**
+ * The side of the tray the pill is on. Docked, the tray slides out away from the wall; floating, it
+ * opens toward whichever side of the pill has more of the screen.
+ */
+const pillSide = (frame: NotchFrame, area: Area): Wall => {
+  if (frame.wall !== null) return frame.wall;
+  const box = boxOf(frame);
+  const left = frame.window.x + box.x - area.left;
+  const right = area.right - (frame.window.x + box.x + box.width);
+  const top = frame.window.y + box.y - area.top;
+  const bottom = area.bottom - (frame.window.y + box.y + box.height);
+  return frame.orientation === "column"
+    ? right >= left
+      ? "left"
+      : "right"
+    : bottom >= top
+      ? "top"
+      : "bottom";
+};
+
+/** Where the tray leaves room for a screenshot, beside the pill on `side`, in the window. */
+const roomBeside = (box: Rect, side: Wall): Rect => {
+  const far = canvas.width - edgeRoom - pad;
+  const near = edgeRoom + pad;
+  const beside = { y: box.y + pad, height: box.height - 2 * pad };
+  const below = { x: box.x + pad, width: box.width - 2 * pad };
+  switch (side) {
     case "left":
-      return r;
+      return { ...beside, x: box.x + box.width, width: far - box.x - box.width };
     case "right":
-      return { ...r, x: canvas.width - r.x - r.width };
+      return { ...beside, x: near, width: box.x - near };
     case "top":
-      return { ...turned, y: r.x };
+      return { ...below, y: box.y + box.height, height: far - box.y - box.height };
     case "bottom":
-      return { ...turned, y: canvas.height - r.x - r.width };
+      return { ...below, y: near, height: box.y - near };
   }
 };
 
-/**
- * Where a screenshot can land in the tray, in screen points. Docked, the tray slides out beside the
- * buttons and the screenshot keeps to the pill; floating, it opens both ways from the pill's middle.
- */
-export const screenshotSlot = (frame: NotchFrame): ScreenshotSlot => {
-  const reach = canvas.width - edgeRoom - pad;
-  const from = frame.wall === null ? canvas.width - reach : pill.width;
-  const room = toWindow(frame.drawWall, {
-    x: from,
-    y: frame.along + pad,
-    width: reach - from,
-    height: pill.height - 2 * pad,
-  });
-  return {
-    room: { ...room, x: room.x + frame.window.x, y: room.y + frame.window.y },
-    hug: frame.wall,
-  };
+/** Where a screenshot can land in the tray, in screen points: beside the buttons, against the pill. */
+export const screenshotSlot = (frame: NotchFrame, area: Area): ScreenshotSlot => {
+  const side = pillSide(frame, area);
+  const room = roomBeside(boxOf(frame), side);
+  return { room: { ...room, x: room.x + frame.window.x, y: room.y + frame.window.y }, hug: side };
 };
 
 /**
- * The shut tray: the pill's flat rounded end docked, the whole pill floating. Open, it also covers
- * the screenshot at `landing` with room around it.
+ * The shut tray: the pill's flat rounded end on the side the screenshot `landing` is on. Open, it
+ * also covers the screenshot with room around it.
  */
 export const trayRects = (frame: NotchFrame, landing: Rect) => {
-  const { box } = frame;
-  const shut =
-    frame.wall === null
-      ? { x: box.left, y: box.top, width: box.width, height: box.height }
-      : toWindow(frame.drawWall, {
-          x: pill.width - 2 * pill.radius,
-          y: frame.along,
-          width: 2 * pill.radius,
-          height: pill.height,
-        });
+  const box = boxOf(frame);
+  const end = 2 * pill.radius;
+  const shut: Rect =
+    landing.x >= box.x + box.width - pad
+      ? { ...box, x: box.x + box.width - end, width: end }
+      : landing.x + landing.width <= box.x + pad
+        ? { ...box, width: end }
+        : landing.y >= box.y + box.height - pad
+          ? { ...box, y: box.y + box.height - end, height: end }
+          : { ...box, height: end };
   const left = Math.min(shut.x, landing.x - pad);
   const top = Math.min(shut.y, landing.y - pad);
   const right = Math.max(shut.x + shut.width, landing.x + landing.width + pad);
