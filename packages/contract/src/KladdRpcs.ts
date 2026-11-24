@@ -2,6 +2,7 @@ import {
   ClosableWindow,
   LoggingOverlayInfo,
   OpenableWindow,
+  Point,
   RecordingSession,
 } from "@kladd/domain";
 import { Schema } from "effect";
@@ -27,4 +28,11 @@ export class KladdRpcs extends RpcGroup.make(
   Rpc.make("OpenPillMenu"),
   Rpc.make("ShowWindow", { payload: { kind: OpenableWindow } }),
   Rpc.make("HideWindow", { payload: { kind: ClosableWindow } }),
+  /** Moves the pill window's top-left corner to `position` at once: the UI is dragging the pill. */
+  Rpc.make("MovePill", { payload: { position: Point } }),
+  /**
+   * Whether clicks on the pill window pass through to the apps below. The window is larger than the
+   * notch, so the UI turns this off only while the pointer is over the notch.
+   */
+  Rpc.make("SetPillClickThrough", { payload: { clickThrough: Schema.Boolean } }),
 ) {}
