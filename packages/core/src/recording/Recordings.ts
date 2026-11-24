@@ -42,7 +42,8 @@ interface Running {
  * session folder, finished in the background after stop (finishSession); clips (Clips) can be
  * taken while it runs. Stopping a recording starts logging mode.
  * A folder left unfinished, such as by a crash or by a stop before the model was ready, is finished
- * when Kladd opens and once the model is ready; a crashed recording is not resumed.
+ * when Kladd opens and once the model is ready, when the active session's stopped clips are
+ * transcribed too; a crashed recording is not resumed.
  * A use case depends on ports (../ports) and other use cases, never on infra or platform code.
  */
 export class Recordings extends Context.Service<
@@ -107,11 +108,15 @@ export class Recordings extends Context.Service<
         needsModel: boolean,
       ) {
         for (const folder of yield* store.unfinished) {
-          // save marks a recording active before its capture starts.
+          // save marks a recording active before its capture starts. Its overview waits for stop,
+          // but its stopped clips needn't wait for their transcripts.
           const active = yield* store.active;
           if (Option.isSome(active)) {
             const recording = yield* store.folder(active.value.id);
-            if (Option.contains(recording, folder)) continue;
+            if (Option.contains(recording, folder)) {
+              if (needsModel) yield* clips.transcribe(folder);
+              continue;
+            }
           }
           if ((yield* store.untranscribed(folder)).length > 0 !== needsModel) continue;
           yield* finishSession(folder).pipe(

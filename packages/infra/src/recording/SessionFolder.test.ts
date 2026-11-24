@@ -351,26 +351,39 @@ describe("session folder", () => {
     }).pipe(Effect.provide(NodeServices.layer)),
   );
 
-  it.live("the active session's folder is not finished when the model gets ready", () =>
-    Effect.gen(function* () {
-      const fs = yield* FileSystem.FileSystem;
-      const model = yield* Deferred.make<void>();
-      yield* Effect.gen(function* () {
-        const recordings = yield* Recordings;
-        yield* recordings.start;
-        const [folder] = (yield* Ref.get(yield* SessionCaptureLog)).started;
-        assert.isDefined(folder);
-        yield* clip;
-        const audio = `${folder}/clips/001/audio.m4a`;
-        yield* eventually(transcribed, (all) => all.length === 1);
-        yield* Deferred.succeed(model, undefined);
-        yield* Effect.sleep("100 millis");
-        assert.deepStrictEqual(yield* transcribed, [audio]);
-        assert.isFalse(yield* fs.exists(`${folder}/overview.md`));
-        yield* recordings.stop;
-        assert.include(yield* overviewOf(folder, (t) => t.includes("1 lines")), "| 001 |");
-        assert.deepStrictEqual(yield* transcribed, [audio, audio]);
-      }).pipe(Effect.provide(kladdInTemp(whisper(model))));
-    }).pipe(Effect.provide(NodeServices.layer)),
+  it.live(
+    "when the model gets ready, the active session's stopped clips are transcribed, and its overview waits for stop",
+    () =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const model = yield* Deferred.make<void>();
+        yield* Effect.gen(function* () {
+          const recordings = yield* Recordings;
+          yield* recordings.start;
+          const [folder] = (yield* Ref.get(yield* SessionCaptureLog)).started;
+          assert.isDefined(folder);
+          yield* clip;
+          const [first, second] = [`${folder}/clips/001`, `${folder}/clips/002`];
+          yield* eventually(transcribed, (all) => all.length === 1);
+          // 002 is still recording when the model gets ready.
+          yield* toggle;
+          yield* Deferred.succeed(model, undefined);
+          yield* eventually(fs.readFileString(`${first}/transcript.jsonl`));
+          assert.strictEqual((yield* readJson(`${first}/clip.json`)).language, "no");
+          yield* Effect.sleep("100 millis");
+          assert.deepStrictEqual(yield* transcribed, [`${first}/audio.m4a`, `${first}/audio.m4a`]);
+          assert.isFalse(yield* fs.exists(`${second}/transcript.jsonl`));
+          assert.isFalse(yield* fs.exists(`${folder}/overview.md`));
+          yield* recordings.stop;
+          const text = yield* overviewOf(folder, (t) => !t.includes("| no | 0 |"));
+          assert.include(text, "| clips/001/ | yes | 1 lines | 0 |");
+          assert.include(text, "| clips/002/ | yes | 1 lines | 0 |");
+          assert.deepStrictEqual(yield* transcribed, [
+            `${first}/audio.m4a`,
+            `${first}/audio.m4a`,
+            `${second}/audio.m4a`,
+          ]);
+        }).pipe(Effect.provide(kladdInTemp(whisper(model))));
+      }).pipe(Effect.provide(NodeServices.layer)),
   );
 });

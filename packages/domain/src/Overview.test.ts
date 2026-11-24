@@ -139,6 +139,26 @@ describe("renderOverview", () => {
     assert.include(text, "/Users/elev/Code/robot/src/\n- main.c (t=120)\n- sensor.c (t=760)");
   });
 
+  it("puts a clip on the session clock to a tenth of a second", () => {
+    const [clip] = realistic.clips;
+    assert.isDefined(clip);
+    const at = (iso: string) => DateTime.makeUnsafe(iso);
+    const text = renderOverview({
+      ...realistic,
+      clips: [
+        {
+          ...clip,
+          info: {
+            ...clip.info,
+            startedAt: at("2026-11-24T13:09:10.380Z"),
+            stoppedAt: at("2026-11-24T13:11:40.920Z"),
+          },
+        },
+      ],
+    });
+    assert.include(text, "| 001 | 430.4–580.9 |");
+  });
+
   it("names missing data: no Accessibility, a crash, a clip cut short or not transcribed", () => {
     const [clip] = realistic.clips;
     assert.isDefined(clip);

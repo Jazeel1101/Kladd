@@ -37,7 +37,7 @@ const withCapture = (
         OverlayWindowsTest,
         session,
         TranscriberTest(),
-        ClipCaptureTest,
+        ClipCaptureTest(),
         RecordingStoreTest,
       ),
     ),

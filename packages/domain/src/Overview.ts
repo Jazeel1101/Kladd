@@ -174,8 +174,9 @@ export const renderOverview = (input: OverviewInput): string => {
     Option.flatMap((at) => DateTime.make(at)),
     Option.getOrElse((): DateTime.DateTime => input.session.startedAt),
   );
+  // To a tenth of a second: a clip's start is added to every time inside its files.
   const onSessionClock = (at: DateTime.Utc): number =>
-    Math.max(0, Math.floor((DateTime.toEpochMillis(at) - DateTime.toEpochMillis(zero)) / 1000));
+    Math.max(0, Math.round((DateTime.toEpochMillis(at) - DateTime.toEpochMillis(zero)) / 100) / 10);
 
   const missing: Array<string> = [];
   if (stop === undefined)

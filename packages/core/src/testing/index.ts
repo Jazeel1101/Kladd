@@ -70,11 +70,19 @@ export const ScreenCaptureTest = {
   grantedRevokedOnRequest: screenCaptureTest("granted", "denied"),
 };
 
-/** Starts and stops at once and writes nothing. */
-export const ClipCaptureTest = Layer.succeed(
-  ClipCapture,
-  ClipCapture.of({ start: () => Effect.succeed({ stop: Effect.void }) }),
-);
+/**
+ * Writes nothing; starts and stops at once, or after running `start` or `stop`: Effect.sleep for
+ * the helper's latency, Effect.never for a start that never reports ready.
+ */
+export const ClipCaptureTest = (
+  wait: { readonly start?: Effect.Effect<void>; readonly stop?: Effect.Effect<void> } = {},
+) =>
+  Layer.succeed(
+    ClipCapture,
+    ClipCapture.of({
+      start: () => Effect.as(wait.start ?? Effect.void, { stop: wait.stop ?? Effect.void }),
+    }),
+  );
 
 /** What SessionCaptureTest saw. Read it with `yield* SessionCaptureLog` in a test. */
 export class SessionCaptureLog extends Context.Service<
