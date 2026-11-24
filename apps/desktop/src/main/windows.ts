@@ -51,8 +51,8 @@ interface WindowSpec {
 const windowTable: Record<WindowKind, WindowSpec> = {
   pill: {
     // Matches the notch's SVG canvas (apps/ui/src/pill/notchShape.ts): the notch plus room to pull
-    // it from the wall. The UI moves it while the user drags the notch.
-    size: { width: 194, height: 194 },
+    // it from the wall and for its screenshot tray. The UI moves it while the user drags the notch.
+    size: { width: 340, height: 340 },
     overlay: true,
     noShadow: true,
     clickThrough: true,

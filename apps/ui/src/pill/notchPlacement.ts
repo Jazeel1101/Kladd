@@ -1,4 +1,4 @@
-import { attractRange, canvas, flare, pill } from "./notchShape";
+import { attractRange, canvas, flare, inset, pill } from "./notchShape";
 
 /**
  * Where the notch is on screen and what that means for drawing it. Pure: the drag hook feeds it
@@ -216,7 +216,7 @@ export const frameAt = (
     wall,
     orientation,
     drawWall: wall ?? (orientation === "column" ? "left" : "top"),
-    gap: wall === null ? attractRange : gapTo(wall, center, area),
+    gap: wall === null ? inset : gapTo(wall, center, area),
     tilt: orientation === "column" ? tilt : -tilt,
     pull: 1 - Math.abs(tilt) / 45,
     box,

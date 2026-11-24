@@ -2,7 +2,7 @@ import {
   type ScreenCaptureFailed,
   type ScreenCapturePermissionDenied,
   Screenshot,
-  type Rect,
+  type ScreenshotSlot,
   type ScreenshotId,
   type ScreenshotTray,
   emptyScreenshotTray,
@@ -56,8 +56,8 @@ export class Screenshots extends Context.Service<
      * flying, so an old flight can't hide a newer one.
      */
     readonly land: (id: ScreenshotId) => Effect.Effect<void>;
-    /** The pill reports where screenshots land in it, in screen points, whenever it comes to rest. */
-    readonly aimAt: (slot: Rect) => Effect.Effect<void>;
+    /** The pill reports where screenshots can land in it whenever it comes to rest. */
+    readonly aimAt: (slot: ScreenshotSlot) => Effect.Effect<void>;
     /** The tray now, then on every take and land. */
     readonly changes: Stream.Stream<ScreenshotTray>;
   }
@@ -70,7 +70,7 @@ export class Screenshots extends Context.Service<
       const ids = yield* Ids;
       const windows = yield* OverlayWindows;
       const tray = yield* SubscriptionRef.make(emptyScreenshotTray);
-      const slot = yield* Ref.make<Rect | null>(null);
+      const slot = yield* Ref.make<ScreenshotSlot | null>(null);
       // One take at a time, so two quick presses fly one after the other, in order.
       const oneAtATime = Semaphore.withPermit(yield* Semaphore.make(1));
 

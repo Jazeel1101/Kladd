@@ -32,7 +32,7 @@ const shownWindows = Effect.gen(function* () {
 
 const display = { x: 0, y: 0, width: 1440, height: 900 };
 /** The slot of a pill docked on the left wall, as the pill reports it. */
-const slot = { x: 46, y: 608, width: 118, height: 114 };
+const slot = { room: { x: 46, y: 608, width: 252, height: 114 }, hug: "left" as const };
 
 /** Takes a screenshot once the pill has reported its slot. */
 const takeAimed = Effect.gen(function* () {
@@ -56,7 +56,7 @@ describe("Screenshots.take", () => {
       assert.deepStrictEqual((yield* tray)?.flying, {
         screenshot,
         from: display,
-        to: { x: 46, y: 628, width: 118, height: 74 },
+        to: { x: 46, y: 608, width: 182, height: 114 },
       });
       assert.deepStrictEqual(screenshot.display, display);
       // Only the flight window: the logging overlay stays as it was.

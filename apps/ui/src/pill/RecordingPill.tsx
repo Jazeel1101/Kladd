@@ -9,8 +9,8 @@ import { recordingAtom } from "../recording/atoms";
 import { showWindowAtom } from "../windows/atoms";
 import { openMenuAtom } from "./atoms";
 import type { Orientation, Wall } from "./notchPlacement";
-import { attractRange, canvas, dropParts, dropPath } from "./notchShape";
-import { trayPath } from "./intake";
+import { canvas, dropParts, dropPath, inset } from "./notchShape";
+import { roundedPath, trayRects } from "./intake";
 import { useNotchDrag } from "./useNotchDrag";
 import { useScreenshotIntake } from "./useScreenshotIntake";
 
@@ -44,7 +44,7 @@ const path = (d: string) => `path("${d}")`;
  */
 const restingVars = (docked: boolean, along: number): ShapeVars => {
   if (!docked) {
-    const plain = path(dropPath({ gap: attractRange, top: along }));
+    const plain = path(dropPath({ gap: inset, top: along }));
     return { "--drop-rest": plain, "--drop-hover": plain, "--drop-press": plain };
   }
   return {
@@ -185,10 +185,14 @@ export const RecordingPill = () => {
     () => restingVars(frame.wall !== null, frame.along),
     [frame.wall, frame.along],
   );
-  const trayVars: ShapeVars = {
-    "--tray-shut": path(trayPath(frame.wall !== null, frame.along, false)),
-    "--tray-open": path(trayPath(frame.wall !== null, frame.along, true)),
-  };
+  const tray = intake.landing === null ? null : trayRects(frame, intake.landing);
+  const trayVars: ShapeVars | null =
+    tray === null
+      ? null
+      : {
+          "--tray-shut": path(roundedPath(tray.shut)),
+          "--tray-open": path(roundedPath(tray.open)),
+        };
   // While it moves, the wall's liquid and the pill are drawn apart: in a corner the pill tilts and
   // the wall's liquid doesn't, and once the pill leaves the wall only the pill follows it.
   const parts = dropParts({
@@ -261,13 +265,9 @@ export const RecordingPill = () => {
                 floodOpacity="0.32"
               />
             </filter>
-            {intake.active && (
+            {trayVars !== null && (
               <clipPath id="tray-clip">
-                <path
-                  className={cn("notch-tray", intake.open && "open")}
-                  style={trayVars}
-                  transform={tilted}
-                />
+                <path className={cn("notch-tray", intake.open && "open")} style={trayVars} />
               </clipPath>
             )}
           </defs>
@@ -282,11 +282,10 @@ export const RecordingPill = () => {
               transform={tilted}
               fill={liquidColor}
             />
-            {intake.active && (
+            {trayVars !== null && (
               <path
                 className={cn("notch-tray", intake.open && "open")}
                 style={trayVars}
-                transform={tilted}
                 fill={liquidColor}
                 onTransitionEnd={intake.shut}
               />

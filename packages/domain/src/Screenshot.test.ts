@@ -5,14 +5,34 @@ import { ScreenshotId, landingIn } from "./Screenshot";
 describe("landingIn", () => {
   const display = { width: 1440, height: 900 };
 
-  it("fits a docked column notch's width, centred on it", () => {
-    const column = { x: 0, y: 600, width: 46, height: 130 };
-    assert.deepStrictEqual(landingIn(column, display), { x: 0, y: 651, width: 46, height: 29 });
+  it("fills the room's height beside a pill on the left wall, against the pill", () => {
+    const room = { x: 46, y: 608, width: 252, height: 114 };
+    assert.deepStrictEqual(landingIn({ room, hug: "left" }, display), {
+      x: 46,
+      y: 608,
+      width: 182,
+      height: 114,
+    });
   });
 
-  it("fits a row notch's height, centred on it", () => {
-    const row = { x: 600, y: 850, width: 130, height: 46 };
-    assert.deepStrictEqual(landingIn(row, display), { x: 628, y: 850, width: 74, height: 46 });
+  it("keeps to the bottom above a pill on the bottom wall", () => {
+    const room = { x: 600, y: 500, width: 114, height: 252 };
+    assert.deepStrictEqual(landingIn({ room, hug: "bottom" }, display), {
+      x: 600,
+      y: 681,
+      width: 114,
+      height: 71,
+    });
+  });
+
+  it("centres on a floating pill", () => {
+    const room = { x: 0, y: 0, width: 256, height: 114 };
+    assert.deepStrictEqual(landingIn({ room, hug: null }, display), {
+      x: 37,
+      y: 0,
+      width: 182,
+      height: 114,
+    });
   });
 });
 

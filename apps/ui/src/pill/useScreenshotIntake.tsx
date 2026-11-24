@@ -18,8 +18,8 @@ interface Intake {
 const reducedMotion = () => window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 /**
- * The intake (src/pill/intake.ts): while a ⌃⇧C screenshot flies, the tray is `open`. Once it has
- * landed, `image` is where the flight window left it, which main hides a moment later
+ * The intake (src/pill/intake.ts): while a ⌃⇧C screenshot flies to `landing`, the tray is `open`.
+ * Once it has landed, `image` is where the flight window left it, which main hides a moment later
  * (`Screenshots.land`). The pill draws it inside the tray, clipped by the tray's own outline, so
  * when the tray shuts after a beat it hides the screenshot as it goes; the screenshot itself never
  * changes. Call `shut` once the tray has shut: only then is the screenshot thrown away. With
@@ -62,23 +62,16 @@ export const useScreenshotIntake = (frame: NotchFrame) => {
     return () => clearTimeout(closing);
   }, [landed]);
 
+  // Where the flight lands it, in the window.
   const to = intake?.flight.to;
-  const image: (Rect & { readonly href: string }) | null =
-    landed === null || to === undefined
-      ? null
-      : {
-          href: screenshotUrl(landed),
-          x: to.x - frame.window.x,
-          y: to.y - frame.window.y,
-          width: to.width,
-          height: to.height,
-        };
+  const landing: Rect | null =
+    to === undefined ? null : { ...to, x: to.x - frame.window.x, y: to.y - frame.window.y };
 
   return {
-    active: intake !== null,
+    landing,
+    image: landed === null || landing === null ? null : { ...landing, href: screenshotUrl(landed) },
     open: intake !== null && intake.phase !== "closing",
     closing: intake?.phase === "closing",
-    image,
     shut: () =>
       setIntake((now) =>
         now?.phase === "closing" && now.flight.screenshot.id === landed ? null : now,

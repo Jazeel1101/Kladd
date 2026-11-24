@@ -39,17 +39,35 @@ export type ScreenshotTray = typeof ScreenshotTray.Type;
 export const emptyScreenshotTray: ScreenshotTray = { flying: null, attached: [] };
 
 /**
- * Where a new screenshot lands: the largest rect with the display's aspect ratio that fits inside the
- * pill's notch at `notch`, centred on it. From there it drops into the pill and disappears.
+ * Where a new screenshot can land in the pill, in screen points: the most room the pill's tray can
+ * open to, and the side of it the pill is on, which the screenshot keeps to so the tray hugs it.
+ * Null `hug` centres it, for a floating pill whose tray opens both ways.
  */
-export const landingIn = (notch: Rect, display: Size): Rect => {
-  const scale = Math.min(notch.width / display.width, notch.height / display.height);
+export const ScreenshotSlot = Schema.Struct({
+  room: Rect,
+  hug: Schema.NullOr(Schema.Literals(["left", "right", "top", "bottom"])),
+});
+export type ScreenshotSlot = typeof ScreenshotSlot.Type;
+
+/**
+ * Where a new screenshot lands: the largest rect with the display's aspect ratio that fits in the
+ * slot's room, against its `hug` side and centred the other way.
+ */
+export const landingIn = ({ room, hug }: ScreenshotSlot, display: Size): Rect => {
+  const scale = Math.min(room.width / display.width, room.height / display.height);
   const width = Math.round(display.width * scale);
   const height = Math.round(display.height * scale);
-  return {
-    x: notch.x + Math.round((notch.width - width) / 2),
-    y: notch.y + Math.round((notch.height - height) / 2),
-    width,
-    height,
-  };
+  const x =
+    hug === "left"
+      ? room.x
+      : hug === "right"
+        ? room.x + room.width - width
+        : room.x + Math.round((room.width - width) / 2);
+  const y =
+    hug === "top"
+      ? room.y
+      : hug === "bottom"
+        ? room.y + room.height - height
+        : room.y + Math.round((room.height - height) / 2);
+  return { x, y, width, height };
 };
