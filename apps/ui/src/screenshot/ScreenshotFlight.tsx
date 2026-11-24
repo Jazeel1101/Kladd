@@ -30,7 +30,7 @@ interface Parts {
 }
 
 /**
- * Plays one flight and calls `done` once the screenshot rests in the open pill's slot. Returns a
+ * Plays one flight and calls `done` once the screenshot rests in the slot of the pill's open tray. Returns a
  * function that stops it.
  *
  * Every animation here is translate, scale or opacity, which the compositor runs on the GPU without
@@ -94,8 +94,8 @@ const afterNextPaint = (f: () => void) => {
 
 /**
  * ScreenshotFlight: a click-through window over the whole display. A new screenshot starts covering
- * the screen exactly, so the screen seems to freeze, then flashes, lifts and springs into the slot
- * the pill opens for it (a shared element transition), where the pill takes over. How it fits
+ * the screen exactly, so the screen seems to freeze, then flashes, lifts and springs into the tray
+ * the pill slides out for it (a shared element transition), where the pill takes over. How it fits
  * together: docs/internals/screenshot-flight.md.
  */
 export const ScreenshotFlight = () => {

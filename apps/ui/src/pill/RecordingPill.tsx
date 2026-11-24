@@ -10,7 +10,7 @@ import { showWindowAtom } from "../windows/atoms";
 import { openMenuAtom } from "./atoms";
 import type { Orientation, Wall } from "./notchPlacement";
 import { attractRange, canvas, dropParts, dropPath } from "./notchShape";
-import { openPath } from "./intake";
+import { trayPath } from "./intake";
 import { useNotchDrag } from "./useNotchDrag";
 import { useScreenshotIntake } from "./useScreenshotIntake";
 
@@ -181,12 +181,14 @@ export const RecordingPill = () => {
   const { box, drawWall, orientation } = frame;
 
   const intake = useScreenshotIntake(frame);
-  const resting = useMemo(() => {
-    if (!intake.open) return restingVars(frame.wall !== null, frame.along);
-    // Open to take in a screenshot: it stays open under the pointer too.
-    const open = path(openPath(frame.wall !== null, frame.along));
-    return { "--drop-rest": open, "--drop-hover": open, "--drop-press": open };
-  }, [intake.open, frame.wall, frame.along]);
+  const resting = useMemo(
+    () => restingVars(frame.wall !== null, frame.along),
+    [frame.wall, frame.along],
+  );
+  const trayVars: ShapeVars = {
+    "--tray-shut": path(trayPath(frame.wall !== null, frame.along, false)),
+    "--tray-open": path(trayPath(frame.wall !== null, frame.along, true)),
+  };
   // While it moves, the wall's liquid and the pill are drawn apart: in a corner the pill tilts and
   // the wall's liquid doesn't, and once the pill leaves the wall only the pill follows it.
   const parts = dropParts({
@@ -271,6 +273,14 @@ export const RecordingPill = () => {
               transform={tilted}
               fill={liquidColor}
             />
+            {intake.active && (
+              <path
+                className={cn("notch-tray", intake.open && "open")}
+                style={trayVars}
+                transform={tilted}
+                fill={liquidColor}
+              />
+            )}
           </g>
         </svg>
 

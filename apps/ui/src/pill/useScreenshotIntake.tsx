@@ -6,7 +6,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { screenshotTrayAtom } from "../screenshot/atoms";
 import type { NotchFrame } from "./notchPlacement";
 
-/** A beat with the screenshot in the open pill before it closes. */
+/** A beat with the screenshot in the open tray before it shuts. */
 const HOLD = 260;
 /** Closing over the screenshot. The `.notch.closing` rule in styles.css runs the shape on this timing. */
 const CLOSE = 420;
@@ -29,9 +29,9 @@ const outside = (start: number, size: number, from: number, length: number) =>
 const reducedMotion = () => window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 /**
- * The intake (src/pill/intake.ts): while a ⌃⇧C screenshot flies, the pill is `open`. Once it has
+ * The intake (src/pill/intake.ts): while a ⌃⇧C screenshot flies, the tray is `open`. Once it has
  * landed, `thumbnail` shows it where the flight window left it, which main hides a moment later
- * (`Screenshots.land`); after a beat the pill is `closing` and closes over it, the screenshot
+ * (`Screenshots.land`); after a beat it is `closing` and the tray slides back over it, the screenshot
  * sliding into the pill's resting box as it goes. With reduced motion the pill stays as it is.
  */
 export const useScreenshotIntake = (frame: NotchFrame) => {
@@ -137,6 +137,7 @@ export const useScreenshotIntake = (frame: NotchFrame) => {
     );
 
   return {
+    active: intake !== null,
     open: intake !== null && intake.phase !== "closing",
     closing: intake?.phase === "closing",
     thumbnail,

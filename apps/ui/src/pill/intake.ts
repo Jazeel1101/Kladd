@@ -1,30 +1,57 @@
 import type { Rect } from "@kladd/domain";
 import type { NotchFrame, Wall } from "./notchPlacement";
-import { attractRange, canvas, dropPath, pill } from "./notchShape";
+import { attractRange, canvas, pill } from "./notchShape";
 
 /**
- * The intake: the pill opens away from its wall to take in a ⌃⇧C screenshot, which lands in its
- * slot, then closes over it. Drawn against a left wall like notchShape.ts; `toWindow` turns it to
- * face the pill's wall.
+ * The intake: a tray slides out of the pill's flat side to take in a ⌃⇧C screenshot, which lands
+ * in its slot, then slides back over it. The pill keeps its shape: the tray is a flat rounded
+ * rectangle drawn with it, hidden in the pill's rounded end when shut. Drawn against a left wall
+ * like notchShape.ts; `toWindow` turns it to face the pill's wall.
  */
 
-/** How far across the window the open pill reaches: as far as its shadow still fits. */
+/** How far across the window the open tray reaches: as far as its shadow still fits. */
 const openEdge = canvas.width - 22;
-/** Room between the slot and the open pill's edges. */
+/** Room between the slot and the open tray's edges. */
 const pad = 8;
 
-/** Where the open pill starts and ends across its wall. Docked it grows away from the wall; floating, both ways. */
+/**
+ * Where the open tray starts and ends across its wall. Docked it slides out of the pill's flat side,
+ * away from the wall; floating, it grows out of the whole pill both ways.
+ */
 const openSpan = (docked: boolean) => ({
-  from: docked ? 0 : canvas.width - openEdge,
+  from: docked ? pill.width - 2 * pill.radius : canvas.width - openEdge,
   to: openEdge,
 });
 
-/** The open pill's outline, for the `.notch-drop` shape. */
-export const openPath = (docked: boolean, along: number): string => {
-  const { from, to } = openSpan(docked);
-  // Floating, the wall stays shaped for a pill out of reach, so it draws nothing.
-  return dropPath({ gap: from, reach: to - from, top: along, shapeGap: docked ? 0 : attractRange });
+/** Where the shut tray sits: the pill's flat rounded end docked, the whole pill floating. */
+const shutSpan = (docked: boolean) => {
+  const right = (docked ? 0 : attractRange) + pill.width;
+  return { from: docked ? right - 2 * pill.radius : right - pill.width, to: right };
 };
+
+const roundedRect = ({ from, to }: { from: number; to: number }, top: number) => {
+  const r = pill.radius;
+  const bottom = top + pill.height;
+  return [
+    `M${from + r} ${top}`,
+    `L${to - r} ${top}`,
+    `A${r} ${r} 0 0 1 ${to} ${top + r}`,
+    `L${to} ${bottom - r}`,
+    `A${r} ${r} 0 0 1 ${to - r} ${bottom}`,
+    `L${from + r} ${bottom}`,
+    `A${r} ${r} 0 0 1 ${from} ${bottom - r}`,
+    `L${from} ${top + r}`,
+    `A${r} ${r} 0 0 1 ${from + r} ${top}`,
+    "Z",
+  ].join(" ");
+};
+
+/**
+ * The tray's outline, open or shut, for the `.notch-tray` shape. Both have the same commands, so
+ * CSS can transition between them.
+ */
+export const trayPath = (docked: boolean, along: number, open: boolean): string =>
+  roundedRect(open ? openSpan(docked) : shutSpan(docked), along);
 
 /** A rect drawn against a left wall, turned to face `wall` in the window (see `faceWall`). */
 const toWindow = (wall: Wall, r: Rect): Rect => {
@@ -42,8 +69,8 @@ const toWindow = (wall: Wall, r: Rect): Rect => {
 };
 
 /**
- * Where a screenshot lands in the open pill, in screen points. Docked, the buttons keep the strip
- * by the wall and the slot takes the rest; floating, the slot spans the pill and covers them.
+ * Where a screenshot lands in the open tray, in screen points. Docked, the buttons keep the strip
+ * by the wall and the slot takes the rest; floating, the slot spans the tray and covers them.
  */
 export const screenshotSlot = (frame: NotchFrame): Rect => {
   const docked = frame.wall !== null;
