@@ -1,9 +1,10 @@
 import type { FocusSnapshot } from "./Focus";
 import type { Rect } from "./Placement";
+import type { WritingTarget } from "./WritingTarget";
 
 /**
- * Per-app rules for where the logging overlay sits (GLOSSARY: "app-adapter").
- * Adapters are pure: they choose from a FocusSnapshot and never call the OS.
+ * Per-app rules for the logging overlay (GLOSSARY: "app-adapter"): where it sits, and what it says
+ * the user is writing in. Adapters are pure: they read a FocusSnapshot and never call the OS.
  * Adding one: docs/operations/adding-app-support.md.
  */
 export interface AppAdapter {
@@ -12,10 +13,20 @@ export interface AppAdapter {
   readonly bundleIds: ReadonlyArray<string>;
   /** The rect to place the overlay next to (GLOSSARY: Anchor), or null to use the no-anchor position. */
   readonly anchor: (focus: FocusSnapshot) => Rect | null;
+  /** What the user is writing in (GLOSSARY: WritingTarget). */
+  readonly target: (focus: FocusSnapshot) => WritingTarget;
 }
 
-/** Declares an adapter. Exists so every adapter file reads the same way. */
-export const makeAppAdapter = (adapter: AppAdapter): AppAdapter => adapter;
+/** The app's name and its focused window's title: what an adapter reports unless it knows better. */
+export const defaultTarget = (focus: FocusSnapshot): WritingTarget => ({
+  app: focus.app?.name ?? null,
+  document: focus.title,
+});
+
+/** Declares an adapter, so every adapter file reads the same way. `target` defaults to defaultTarget. */
+export const makeAppAdapter = (
+  adapter: Omit<AppAdapter, "target"> & Partial<Pick<AppAdapter, "target">>,
+): AppAdapter => ({ target: defaultTarget, ...adapter });
 
 /** The adapter for the front app, or `fallback` when none matches. */
 export const adapterFor = (

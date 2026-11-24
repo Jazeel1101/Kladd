@@ -4,6 +4,7 @@ import { LoggingOverlay } from "../logging/LoggingOverlay";
 import type { ScreenCapture } from "../ports/ScreenCapture";
 import {
   AppAdaptersTest,
+  FocusTrackerLog,
   FocusTrackerTest,
   IdsTest,
   OverlayWindowsLog,
@@ -13,12 +14,22 @@ import {
 } from "../testing";
 import { Recordings } from "./Recordings";
 
-const withCapture = (capture: Layer.Layer<ScreenCapture>) =>
+const withCapture = (
+  capture: Layer.Layer<ScreenCapture>,
+  focus: ReturnType<typeof FocusTrackerTest> = FocusTrackerTest(),
+) =>
   Recordings.layer.pipe(
     Layer.provide([capture, RecordingStoreTest, IdsTest]),
     Layer.provide(LoggingOverlay.layer),
-    Layer.provideMerge(Layer.mergeAll(FocusTrackerTest(), AppAdaptersTest(), OverlayWindowsTest)),
+    Layer.provideMerge(Layer.mergeAll(focus, AppAdaptersTest(), OverlayWindowsTest)),
   );
+
+/** Accessibility is missing, and the user leaves its prompt open. */
+const promptLeftOpen = FocusTrackerTest(undefined, {
+  before: "denied",
+  after: "denied",
+  answer: Effect.never,
+});
 
 describe("Recordings", () => {
   it.effect("start creates an active RecordingSession", () =>
@@ -47,6 +58,28 @@ describe("Recordings", () => {
       assert.strictEqual(error._tag, "ScreenCapturePermissionDenied");
       assert.isTrue(Option.isNone(yield* recordings.active));
     }).pipe(Effect.provide(withCapture(ScreenCaptureTest.denied))),
+  );
+
+  it.effect("start asks for Accessibility in the background, without waiting for it", () =>
+    Effect.gen(function* () {
+      const recordings = yield* Recordings;
+      yield* recordings.start;
+      assert.isTrue(Option.isSome(yield* recordings.active));
+      yield* Effect.yieldNow;
+      assert.strictEqual((yield* Ref.get(yield* FocusTrackerLog)).permissionRequests, 1);
+    }).pipe(Effect.provide(withCapture(ScreenCaptureTest.granted, promptLeftOpen))),
+  );
+
+  it.effect("start shows one Accessibility prompt at a time", () =>
+    Effect.gen(function* () {
+      const recordings = yield* Recordings;
+      yield* recordings.start;
+      yield* Effect.yieldNow;
+      yield* recordings.stop;
+      yield* recordings.start;
+      yield* Effect.yieldNow;
+      assert.strictEqual((yield* Ref.get(yield* FocusTrackerLog)).permissionRequests, 1);
+    }).pipe(Effect.provide(withCapture(ScreenCaptureTest.granted, promptLeftOpen))),
   );
 
   it.effect("stop ends the session and opens the logging overlay", () =>

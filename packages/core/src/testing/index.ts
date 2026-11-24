@@ -3,6 +3,8 @@
  * Adding a port? Add its test layer here in the same PR.
  */
 import {
+  type AccessibilityPermission,
+  FocusTrackingFailed,
   RecordingSessionId,
   ScreenCapturePermissionDenied,
   type ScreenCapturePermission,
@@ -83,9 +85,54 @@ export const IdsTest = Layer.effect(
   }),
 );
 
-/** Always reports `snapshot` (default: nothing known, as without Accessibility permission). */
-export const FocusTrackerTest = (snapshot: FocusSnapshot = emptyFocus) =>
-  Layer.succeed(FocusTracker, FocusTracker.of({ current: Effect.succeed(snapshot) }));
+/** What FocusTrackerTest saw. Read it with `yield* FocusTrackerLog` in a test. */
+export class FocusTrackerLog extends Context.Service<
+  FocusTrackerLog,
+  Ref.Ref<{ readonly permissionRequests: number }>
+>()("kladd/core/testing/FocusTrackerLog") {}
+
+/**
+ * Always reports `snapshot` (default: nothing known, as without Accessibility permission).
+ * `permission` is what it reports before and after a request; counts requests in FocusTrackerLog.
+ * Given a FocusTrackingFailed, every call fails with it. Given an Effect, `current` runs it.
+ */
+export const FocusTrackerTest = (
+  snapshot: FocusSnapshot | FocusTrackingFailed | Effect.Effect<FocusSnapshot> = emptyFocus,
+  permission: {
+    readonly before: AccessibilityPermission;
+    readonly after: AccessibilityPermission;
+    /** Runs before a request answers: Effect.never for a user who leaves the prompt open. */
+    readonly answer?: Effect.Effect<void>;
+  } = { before: "granted", after: "granted" },
+) =>
+  Layer.unwrap(
+    Effect.gen(function* () {
+      const log = yield* Ref.make({ permissionRequests: 0 });
+      const current = yield* Ref.make(permission.before);
+      const failed = snapshot instanceof FocusTrackingFailed ? snapshot : null;
+      const orFail = <A>(effect: Effect.Effect<A>) =>
+        failed === null ? effect : Effect.andThen(effect, Effect.fail(failed));
+      const tracker = FocusTracker.of({
+        current: Effect.isEffect(snapshot)
+          ? snapshot
+          : snapshot instanceof FocusTrackingFailed
+            ? Effect.fail(snapshot)
+            : Effect.succeed(snapshot),
+        permission: orFail(Ref.get(current)),
+        requestPermission: orFail(
+          Ref.update(log, (l) => ({ permissionRequests: l.permissionRequests + 1 })).pipe(
+            Effect.andThen(permission.answer ?? Effect.void),
+            Effect.andThen(Ref.set(current, permission.after)),
+            Effect.as(permission.after),
+          ),
+        ),
+      });
+      return Layer.mergeAll(
+        Layer.succeed(FocusTracker, tracker),
+        Layer.succeed(FocusTrackerLog, log),
+      );
+    }),
+  );
 
 /** The registered adapters: none by default, with a fallback that anchors to the caret. */
 export const AppAdaptersTest = (all: ReadonlyArray<AppAdapter> = []) =>

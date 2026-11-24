@@ -1,12 +1,15 @@
-// kladd-capture: screen recording permission, screenshots and screen video for Kladd on macOS.
-// ScreenCaptureDarwin (../../src/ScreenCaptureDarwin.ts) runs it as a child of Kladd, so macOS
-// attributes the permission to Kladd itself.
+// kladd-capture: Kladd's macOS helper for screen capture and focus. ScreenCaptureDarwin and
+// FocusTrackerDarwin (../../src) run it as a child of Kladd, so macOS attributes screen recording
+// and Accessibility permission to Kladd itself.
 //
-//   kladd-capture status                                  prints "granted" or "denied"
+//   kladd-capture status                                  screen recording: prints "granted" or "denied"
 //   kladd-capture request --app <Kladd.app> [--timeout s] guides the user to grant it, prints the result
 //   kladd-capture screenshot --out <file.png> [--exclude-pid pid]
 //   kladd-capture record --out <file.mov> [--exclude-pid pid]
 //       prints "recording" once frames are written; stops on SIGINT, SIGTERM or stdin closing.
+//   kladd-capture accessibility-status                    Accessibility: prints "granted" or "denied"
+//   kladd-capture accessibility-request --app <Kladd.app> [--timeout s]
+//   kladd-capture focus [--exclude-pid pid]               prints a FocusSnapshot as JSON (Focus.swift)
 //
 // Exit codes: 0 done, 77 permission denied (also prints "denied"), 64 bad usage, 1 anything else.
 
@@ -63,8 +66,9 @@ func pixelConfiguration(for display: SCDisplay) -> SCStreamConfiguration {
 
 // MARK: - Permission
 
-@MainActor func runRequest(_ args: [String]) {
-  if CGPreflightScreenCaptureAccess() {
+/// Guides the user through granting `pane` in System Settings; `granted` reads the permission.
+@MainActor func runRequest(_ args: [String], pane: PermissionFlowPane, granted: @escaping () -> Bool) {
+  if granted() {
     say("granted")
     exit(0)
   }
@@ -72,14 +76,14 @@ func pixelConfiguration(for display: SCDisplay) -> SCStreamConfiguration {
   let timeout = option("--timeout", in: args).flatMap(Double.init) ?? 300
 
   let controller = PermissionFlow.makeController()
-  controller.authorize(pane: .screenRecording, suggestedAppURLs: [URL(fileURLWithPath: appPath)])
+  controller.authorize(pane: pane, suggestedAppURLs: [URL(fileURLWithPath: appPath)])
 
   var finished = false
   let finish: @MainActor () -> Void = {
     guard !finished else { return }
     finished = true
     controller.closePanel()
-    say(CGPreflightScreenCaptureAccess() ? "granted" : "denied")
+    say(granted() ? "granted" : "denied")
     exit(0)
   }
   // Done when the user grants it, closes PermissionFlow's panel (the only window this process
@@ -88,7 +92,7 @@ func pixelConfiguration(for display: SCDisplay) -> SCStreamConfiguration {
     forName: NSWindow.willCloseNotification, object: nil, queue: .main
   ) { _ in MainActor.assumeIsolated { finish() } }
   Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { _ in
-    MainActor.assumeIsolated { if CGPreflightScreenCaptureAccess() { finish() } }
+    MainActor.assumeIsolated { if granted() { finish() } }
   }
   NSWorkspace.shared.notificationCenter.addObserver(
     forName: NSWorkspace.didTerminateApplicationNotification, object: nil, queue: .main
@@ -234,13 +238,24 @@ Task { @MainActor in
     say(CGPreflightScreenCaptureAccess() ? "granted" : "denied")
     exit(0)
   case "request":
-    runRequest(args)
+    runRequest(args, pane: .screenRecording, granted: CGPreflightScreenCaptureAccess)
+  case "accessibility-status":
+    say(AXIsProcessTrusted() ? "granted" : "denied")
+    exit(0)
+  case "accessibility-request":
+    runRequest(args, pane: .accessibility, granted: { AXIsProcessTrusted() })
+  case "focus":
+    printFocus(excludePid: option("--exclude-pid", in: args).flatMap { pid_t($0) })
+    exit(0)
   case "screenshot":
     await runScreenshot(args)
   case "record":
     await runRecord(args)
   default:
-    fail("usage: kladd-capture status | request --app <path> | screenshot --out <file> | record --out <file>", code: exitUsage)
+    fail(
+      "usage: kladd-capture status | request --app <path> | screenshot --out <file> | record --out <file>"
+        + " | accessibility-status | accessibility-request --app <path> | focus [--exclude-pid pid]",
+      code: exitUsage)
   }
 }
 

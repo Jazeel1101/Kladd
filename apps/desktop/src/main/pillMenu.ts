@@ -1,8 +1,8 @@
-import { OverlayWindows, Recordings } from "@kladd/core";
+import { LoggingOverlay, OverlayWindows, Recordings } from "@kladd/core";
 import { Menu, app, dialog } from "electron";
 import { Context, Effect, Layer, Option } from "effect";
 
-/** The pill's native menu: start/stop recording, Settings, Quit. */
+/** The pill's native menu: start/stop recording, show the logging overlay, Settings, Quit. */
 export class PillMenu extends Context.Service<PillMenu, { readonly open: Effect.Effect<void> }>()(
   "kladd/desktop/PillMenu",
 ) {}
@@ -25,6 +25,7 @@ export const PillMenuLive = Layer.effect(
   Effect.gen(function* () {
     const recordings = yield* Recordings;
     const windows = yield* OverlayWindows;
+    const logging = yield* LoggingOverlay;
     const context = yield* Effect.context<never>();
     // Menu clicks are Electron callbacks, so each action is forked on the app's runtime.
     const run = (effect: Effect.Effect<void>) => () => Effect.runForkWith(context)(effect);
@@ -47,6 +48,8 @@ export const PillMenuLive = Layer.effect(
         recording
           ? { label: "Stop recording", click: run(stop) }
           : { label: "Start recording", click: run(start) },
+        // Opens it without a recording: for trying app adapters in the app the user is in.
+        { label: "Show logging overlay", click: run(logging.open) },
         { type: "separator" },
         { label: "Settings…", click: run(windows.show("settings")) },
         { label: "Quit Kladd", click: () => app.quit() },

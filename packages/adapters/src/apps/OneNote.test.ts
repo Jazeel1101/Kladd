@@ -9,7 +9,7 @@ const caret = { x: 420, y: 300, width: 1, height: 16 };
 
 describe("OneNote", () => {
   it("anchors to the page element even when a caret is reported", () => {
-    assert.deepStrictEqual(OneNote.anchor({ app, window, element, caret }), element);
+    assert.deepStrictEqual(OneNote.anchor({ ...emptyFocus, app, window, element, caret }), element);
   });
 
   it("falls back to the window when no element is focused", () => {

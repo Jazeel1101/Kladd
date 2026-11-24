@@ -16,7 +16,9 @@ import {
   SubscriptionRef,
 } from "effect";
 import { requireScreenCapture } from "../capture/requireScreenCapture";
+import { askForAccessibility } from "../focus/askForAccessibility";
 import { LoggingOverlay } from "../logging/LoggingOverlay";
+import { FocusTracker } from "../ports/FocusTracker";
 import { Ids } from "../ports/Ids";
 import { RecordingStore } from "../ports/RecordingStore";
 import { ScreenCapture } from "../ports/ScreenCapture";
@@ -28,7 +30,10 @@ import { ScreenCapture } from "../ports/ScreenCapture";
 export class Recordings extends Context.Service<
   Recordings,
   {
-    /** Asks for screen capture permission first if Kladd doesn't have it. */
+    /**
+     * Asks for screen capture permission first if Kladd doesn't have it. Once recording, asks for
+     * Accessibility in the background (optional: it places the logging overlay next to the text).
+     */
     readonly start: Effect.Effect<
       RecordingSession,
       RecordingAlreadyActive | ScreenCapturePermissionDenied | ScreenCaptureFailed
@@ -44,12 +49,16 @@ export class Recordings extends Context.Service<
     Recordings,
     Effect.gen(function* () {
       const capture = yield* ScreenCapture;
+      const focus = yield* FocusTracker;
       const store = yield* RecordingStore;
       const ids = yield* Ids;
       const logging = yield* LoggingOverlay;
       const current = yield* SubscriptionRef.make(yield* store.active);
       // Start and stop check, then change, the active recording; one at a time so they can't interleave.
       const exclusive = Semaphore.withPermit(yield* Semaphore.make(1));
+      // The Accessibility prompt outlives start, and only one is shown at a time.
+      const layerScope = yield* Effect.scope;
+      const asking = yield* Semaphore.make(1);
 
       const start = Effect.gen(function* () {
         const active = yield* SubscriptionRef.get(current);
@@ -64,6 +73,11 @@ export class Recordings extends Context.Service<
         });
         yield* store.save(session);
         yield* SubscriptionRef.set(current, Option.some(session));
+        yield* askForAccessibility.pipe(
+          Effect.provideService(FocusTracker, focus),
+          Semaphore.withPermitsIfAvailable(asking, 1),
+          Effect.forkIn(layerScope),
+        );
         return session;
       }).pipe(exclusive, Effect.withSpan("Recordings.start"));
 

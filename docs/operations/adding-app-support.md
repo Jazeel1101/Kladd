@@ -1,6 +1,6 @@
 # Adding support for an app
 
-An app adapter tells the logging overlay what to sit next to in one app. Adapters are pure: they pick a rect from a `FocusSnapshot` and never call the OS.
+An app adapter tells the logging overlay what to sit next to in one app, and what the user is writing in. Adapters are pure: they read a `FocusSnapshot` and never call the OS.
 
 1. Add `packages/adapters/src/apps/<App>.ts`. Copy `OneNote.ts`. Every file there is loaded automatically:
    ```ts
@@ -11,8 +11,9 @@ An app adapter tells the logging overlay what to sit next to in one app. Adapter
    });
    ```
    Find the bundle id with `osascript -e 'id of app "<App name>"'`. Return `null` to use the no-anchor position.
-2. Test `anchor` with snapshots shaped like the app's real ones, including missing caret and missing element. Copy `apps/OneNote.test.ts`.
+2. Optionally add `target: (focus) => ({ app, document })`, the `WritingTarget` the overlay shows. Without it the adapter reports the app name and window title (`defaultTarget`), so add it when the title needs cleaning up, such as dropping a " - Notebook" suffix.
+3. Test it with snapshots shaped like the app's real ones, including missing caret and missing element. Copy `apps/OneNote.test.ts`. To see a real snapshot, build the helper (`vp run @kladd/platform-darwin#build:native`), click into the app, and run `sleep 3; packages/platform-darwin/native/.build/release/kladd-capture focus` from a terminal that has Accessibility permission.
 
-Apps without an adapter use `Generic` (caret, then element, then window).
+Apps without an adapter use `Generic`: caret, then element, then window, and the default target.
 
-If an adapter needs data the snapshot doesn't have (such as a page title), add an optional field to `FocusSnapshot` in `packages/domain/src/Focus.ts` and fill it in platform-darwin's focus tracker. Don't read it in the adapter.
+If an adapter needs data the snapshot doesn't have, add a nullable field to `FocusSnapshot` in `packages/domain/src/Focus.ts` and fill it in `Focus.swift`. Don't read it in the adapter.

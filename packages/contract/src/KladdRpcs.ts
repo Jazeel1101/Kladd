@@ -1,4 +1,9 @@
-import { ClosableWindow, OpenableWindow, RecordingSession } from "@kladd/domain";
+import {
+  ClosableWindow,
+  LoggingOverlayInfo,
+  OpenableWindow,
+  RecordingSession,
+} from "@kladd/domain";
 import { Schema } from "effect";
 import { Rpc, RpcGroup } from "effect/rpc";
 
@@ -13,7 +18,12 @@ export class KladdRpcs extends RpcGroup.make(
     success: Schema.NullOr(RecordingSession),
     stream: true,
   }),
-  /** Pops up the pill's native menu: start/stop recording, Settings, Quit. */
+  /** What the logging overlay was last opened for (null before), then every later open. */
+  Rpc.make("WatchLoggingOverlay", {
+    success: Schema.NullOr(LoggingOverlayInfo),
+    stream: true,
+  }),
+  /** Pops up the pill's native menu: start/stop recording, show the logging overlay, Settings, Quit. */
   Rpc.make("OpenPillMenu"),
   Rpc.make("ShowWindow", { payload: { kind: OpenableWindow } }),
   Rpc.make("HideWindow", { payload: { kind: ClosableWindow } }),
