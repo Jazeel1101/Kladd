@@ -66,6 +66,48 @@ func caret(_ element: AXUIElement) -> CGRect? {
   return bounds
 }
 
+/// The first value `pick` finds in `element` or its descendants, depth first.
+func firstInTree(_ element: AXUIElement, depth: Int = 0, _ pick: (AXUIElement) -> String?) -> String? {
+  if let value = pick(element), !value.isEmpty { return value }
+  guard depth < 4, let children = attribute(element, kAXChildrenAttribute) as? [AXUIElement] else { return nil }
+  for child in children {
+    if let value = firstInTree(child, depth: depth + 1, pick) { return value }
+  }
+  return nil
+}
+
+/// How much of the window's AX tree `selection` reads: OneNote's sidebars are about 100 elements in.
+let selectionMaxElements = 400
+let selectionDeadline: TimeInterval = 0.2
+
+/// The selected rows of every list (outline or table) in `window`, breadth first, such as the current
+/// section and page in a sidebar. Each row is its first AXIdentifier, when the app sets one, and its
+/// first text. Lists aren't walked row by row: AXSelectedRows names the selected ones.
+func selection(_ window: AXUIElement) -> [[String: Any]] {
+  let deadline = Date().addingTimeInterval(selectionDeadline)
+  var queue = [window]
+  var next = 0
+  var items: [[String: Any]] = []
+  while next < queue.count, next < selectionMaxElements, Date() < deadline {
+    let element = queue[next]
+    next += 1
+    let role = attribute(element, kAXRoleAttribute) as? String
+    guard role == kAXOutlineRole || role == kAXTableRole else {
+      queue += attribute(element, kAXChildrenAttribute) as? [AXUIElement] ?? []
+      continue
+    }
+    for row in attribute(element, kAXSelectedRowsAttribute) as? [AXUIElement] ?? [] {
+      let id = firstInTree(row) { attribute($0, "AXIdentifier") as? String }
+      let text = firstInTree(row) {
+        attribute($0, kAXRoleAttribute) as? String == kAXStaticTextRole
+          ? attribute($0, kAXValueAttribute) as? String : nil
+      }
+      items.append(["id": id ?? NSNull(), "text": text ?? NSNull()])
+    }
+  }
+  return items
+}
+
 func json(_ rect: CGRect?) -> Any {
   guard let rect else { return NSNull() }
   return ["x": rect.origin.x, "y": rect.origin.y, "width": rect.width, "height": rect.height]
@@ -93,6 +135,7 @@ func userApp(excludePid: pid_t?) -> NSRunningApplication? {
 func focusSnapshot(excludePid: pid_t?) -> [String: Any] {
   var snapshot: [String: Any] = [
     "app": NSNull(), "window": NSNull(), "title": NSNull(), "element": NSNull(), "caret": NSNull(),
+    "selection": [],
   ]
   // An app's focused window and element stay readable over AX while it is in the background.
   guard let front = userApp(excludePid: excludePid), let bundleId = front.bundleIdentifier
@@ -106,6 +149,7 @@ func focusSnapshot(excludePid: pid_t?) -> [String: Any] {
   if let window = childElement(app, kAXFocusedWindowAttribute) {
     snapshot["window"] = json(frame(window))
     if let title = attribute(window, kAXTitleAttribute) as? String, !title.isEmpty { snapshot["title"] = title }
+    snapshot["selection"] = selection(window)
   }
   if let element = childElement(app, kAXFocusedUIElementAttribute) {
     snapshot["element"] = json(frame(element))

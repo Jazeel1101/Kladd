@@ -1,5 +1,5 @@
 import { assert, describe, it } from "@effect/vitest";
-import { placeOverlay, placeWithoutAnchor } from "./Placement";
+import { placeInside, placeOverlay, placeWithoutAnchor } from "./Placement";
 
 const screen = { x: 0, y: 25, width: 1440, height: 875 };
 const size = { width: 320, height: 400 };
@@ -35,6 +35,30 @@ describe("placeOverlay", () => {
     const left = { x: -1920, y: 0, width: 1920, height: 1080 };
     const anchor = { x: -100, y: 100, width: 2, height: 18 };
     assert.strictEqual(placeOverlay(anchor, size, left).x, -100 - 8 - 320);
+  });
+});
+
+describe("placeInside", () => {
+  it("puts the overlay in the anchor's top-right corner", () => {
+    const canvas = { x: 478, y: 181, width: 952, height: 755 };
+    assert.deepStrictEqual(placeInside(canvas, size, screen), {
+      x: 478 + 952 - 8 - 320,
+      y: 181 + 8,
+      width: 320,
+      height: 400,
+    });
+  });
+
+  it("goes beside the anchor when it would take more than half its width", () => {
+    const narrow = { x: 300, y: 100, width: 600, height: 700 };
+    assert.deepStrictEqual(placeInside(narrow, size, screen), placeOverlay(narrow, size, screen));
+  });
+
+  it("stays on screen when the anchor reaches past its edge", () => {
+    const offscreen = { x: 700, y: 0, width: 1000, height: 900 };
+    const rect = placeInside(offscreen, size, screen);
+    assert.strictEqual(rect.x, 1440 - 320);
+    assert.strictEqual(rect.y, 25);
   });
 });
 

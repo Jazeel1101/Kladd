@@ -1,6 +1,7 @@
 import {
   adapterFor,
   emptyFocus,
+  placeInside,
   placeOverlay,
   placeWithoutAnchor,
   type LoggingOverlayInfo,
@@ -44,7 +45,11 @@ export class LoggingOverlay extends Context.Service<
         const size = windows.size("logging");
         const screen = yield* windows.workArea(anchor ?? snapshot.window);
         const bounds =
-          anchor === null ? placeWithoutAnchor(size, screen) : placeOverlay(anchor, size, screen);
+          anchor === null
+            ? placeWithoutAnchor(size, screen)
+            : adapter.placement === "inside"
+              ? placeInside(anchor, size, screen)
+              : placeOverlay(anchor, size, screen);
         yield* Effect.annotateCurrentSpan({ adapter: adapter.id, anchored: anchor !== null });
         // Set before showing: a window opened for the first time reads it when its UI subscribes.
         yield* SubscriptionRef.set(info, {

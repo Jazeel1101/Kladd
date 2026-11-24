@@ -9,8 +9,20 @@ export const FrontApp = Schema.Struct({
 export type FrontApp = typeof FrontApp.Type;
 
 /**
- * Where the user is at one moment (GLOSSARY: "fokus"). Every field can be null: apps differ in what
- * they report, and without Accessibility permission nothing is known.
+ * A selected row in one of the focused window's lists, such as the current page in a sidebar
+ * (GLOSSARY: "markert rad").
+ */
+export const SelectedItem = Schema.Struct({
+  /** AXIdentifier of the row's view, when the app sets one. Unlike `text`, it doesn't change with the UI language. */
+  id: Schema.NullOr(Schema.String),
+  /** The row's first text, such as a page title. */
+  text: Schema.NullOr(Schema.String),
+});
+export type SelectedItem = typeof SelectedItem.Type;
+
+/**
+ * Where the user is at one moment (GLOSSARY: "fokus"). Every field can be null or empty: apps
+ * differ in what they report, and without Accessibility permission nothing is known.
  * See docs/internals/overlay-placement.md.
  */
 export const FocusSnapshot = Schema.Struct({
@@ -23,6 +35,8 @@ export const FocusSnapshot = Schema.Struct({
   element: Schema.NullOr(Rect),
   /** The text cursor. Electron/Chromium apps usually don't report it. */
   caret: Schema.NullOr(Rect),
+  /** Selected rows of the window's lists, front to back of the AX tree. Empty when unknown. */
+  selection: Schema.Array(SelectedItem),
 });
 export type FocusSnapshot = typeof FocusSnapshot.Type;
 
@@ -32,6 +46,7 @@ export const emptyFocus: FocusSnapshot = {
   title: null,
   element: null,
   caret: null,
+  selection: [],
 };
 
 /** Whether the OS lets Kladd read other apps' windows and text fields (GLOSSARY: "tilgjengelighetstilgang"). */

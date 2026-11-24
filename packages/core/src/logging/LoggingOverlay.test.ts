@@ -67,6 +67,16 @@ describe("LoggingOverlay.open", () => {
     }),
   );
 
+  it.effect("places the overlay inside the anchor for an adapter that asks for it", () =>
+    Effect.gen(function* () {
+      const window = { x: 100, y: 50, width: 1000, height: 600 };
+      const app = { bundleId: "com.apple.Notes", name: "Notes" };
+      const canvas = makeAppAdapter({ ...notes, placement: "inside" });
+      const shown = yield* run({ ...emptyFocus, app, window }, AppAdaptersTest([canvas]));
+      assert.deepStrictEqual(shown[0]?.bounds, { x: 792, y: 58, width: 300, height: 400 });
+    }),
+  );
+
   it.effect("uses the no-anchor position when nothing is known", () =>
     Effect.gen(function* () {
       const shown = yield* run(emptyFocus);
