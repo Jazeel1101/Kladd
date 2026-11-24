@@ -30,11 +30,15 @@ export const LoggingOverlay = () => {
   const info = AsyncResult.isSuccess(opened) ? opened.value : null;
   return (
     <section className="flex h-screen flex-col gap-3 rounded-xl bg-white/95 p-4 text-sm text-neutral-900 shadow-lg">
-      <header className="flex items-center justify-between">
-        <h1 className="font-medium">Skriv logg</h1>
+      {/*
+        The header moves the window (a movable overlay in apps/desktop windows.ts); the button stays
+        clickable. Negative margins stretch it over the section's padding, to the window's top and sides.
+      */}
+      <header className="-mx-4 -mt-4 flex items-center justify-between px-4 pt-4 [-webkit-app-region:drag]">
+        <h1 className="font-medium select-none">Skriv logg</h1>
         <Button
           aria-label="Close"
-          className="border-0 bg-transparent text-neutral-500"
+          className="border-0 bg-transparent text-neutral-500 [-webkit-app-region:no-drag]"
           onClick={() => close({ payload: undefined })}
         >
           ✕
