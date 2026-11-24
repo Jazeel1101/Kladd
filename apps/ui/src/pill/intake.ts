@@ -69,23 +69,6 @@ const toWindow = (wall: Wall, r: Rect): Rect => {
 };
 
 /**
- * Where a screenshot in the tray is gone once the tray has shut, in the window: past the pill's
- * flat side docked, the pill's middle floating. The screenshot stays put and is cut off toward
- * this as the tray shuts over it.
- */
-export const goneAt = (frame: NotchFrame): Rect => {
-  const { from, to } = shutSpan(frame.wall !== null);
-  const middle = (from + to) / 2;
-  const span = frame.wall !== null ? { from, to } : { from: middle, to: middle };
-  return toWindow(frame.drawWall, {
-    x: span.from,
-    y: frame.along,
-    width: span.to - span.from,
-    height: pill.height,
-  });
-};
-
-/**
  * Where a screenshot lands in the open tray, in screen points. Docked, the buttons keep the strip
  * by the wall and the slot takes the rest; floating, the slot spans the tray and covers them.
  */

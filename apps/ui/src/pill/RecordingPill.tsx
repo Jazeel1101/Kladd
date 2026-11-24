@@ -261,6 +261,15 @@ export const RecordingPill = () => {
                 floodOpacity="0.32"
               />
             </filter>
+            {intake.active && (
+              <clipPath id="tray-clip">
+                <path
+                  className={cn("notch-tray", intake.open && "open")}
+                  style={trayVars}
+                  transform={tilted}
+                />
+              </clipPath>
+            )}
           </defs>
           {/* The shadow sits outside the turn, so it always falls down the screen. */}
           <g filter="url(#drop-shadow)">
@@ -279,9 +288,14 @@ export const RecordingPill = () => {
                 style={trayVars}
                 transform={tilted}
                 fill={liquidColor}
+                onTransitionEnd={intake.shut}
               />
             )}
           </g>
+          {/* In the tray: it shows only what the tray covers, so the tray hides it as it shuts. */}
+          {intake.image !== null && (
+            <image {...intake.image} preserveAspectRatio="none" clipPath="url(#tray-clip)" />
+          )}
         </svg>
 
         <div
@@ -317,7 +331,6 @@ export const RecordingPill = () => {
             <ScreenshotIcon />
           </NotchButton>
         </div>
-        {intake.thumbnail}
       </div>
     </div>
   );

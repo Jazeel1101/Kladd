@@ -33,8 +33,8 @@ body {
 }
 /*
  * The tray that slides out of the pill for a ⌃⇧C screenshot (src/pill/intake.ts). It is only drawn
- * while it takes one in, and opens from shut as it appears. It shuts on the screenshot's timing
- * (src/pill/useScreenshotIntake.tsx).
+ * while it takes one in, and opens from shut as it appears. The screenshot inside it is clipped by a
+ * copy of it (`#tray-clip`) that runs the same transitions, so the tray hides it as it shuts.
  */
 .notch-tray {
   d: var(--tray-shut);
