@@ -16,7 +16,9 @@ import {
   SubscriptionRef,
 } from "effect";
 import { requireScreenCapture } from "../capture/requireScreenCapture";
+import { askForAccessibility } from "../focus/askForAccessibility";
 import { LoggingOverlay } from "../logging/LoggingOverlay";
+import { FocusTracker } from "../ports/FocusTracker";
 import { Ids } from "../ports/Ids";
 import { RecordingStore } from "../ports/RecordingStore";
 import { ScreenCapture } from "../ports/ScreenCapture";
@@ -28,7 +30,10 @@ import { ScreenCapture } from "../ports/ScreenCapture";
 export class Recordings extends Context.Service<
   Recordings,
   {
-    /** Asks for screen capture permission first if Kladd doesn't have it. */
+    /**
+     * Asks for screen capture permission first if Kladd doesn't have it (required), then for
+     * Accessibility (optional: it places the logging overlay next to the text).
+     */
     readonly start: Effect.Effect<
       RecordingSession,
       RecordingAlreadyActive | ScreenCapturePermissionDenied | ScreenCaptureFailed
@@ -44,6 +49,7 @@ export class Recordings extends Context.Service<
     Recordings,
     Effect.gen(function* () {
       const capture = yield* ScreenCapture;
+      const focus = yield* FocusTracker;
       const store = yield* RecordingStore;
       const ids = yield* Ids;
       const logging = yield* LoggingOverlay;
@@ -58,6 +64,7 @@ export class Recordings extends Context.Service<
         }
         // Inside the permit, so a second start waits for this one's permission prompt.
         yield* requireScreenCapture.pipe(Effect.provideService(ScreenCapture, capture));
+        yield* askForAccessibility.pipe(Effect.provideService(FocusTracker, focus));
         const session = new RecordingSession({
           id: yield* ids.recordingSessionId,
           startedAt: yield* DateTime.now,

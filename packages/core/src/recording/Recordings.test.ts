@@ -4,6 +4,7 @@ import { LoggingOverlay } from "../logging/LoggingOverlay";
 import type { ScreenCapture } from "../ports/ScreenCapture";
 import {
   AppAdaptersTest,
+  FocusTrackerLog,
   FocusTrackerTest,
   IdsTest,
   OverlayWindowsLog,
@@ -13,11 +14,14 @@ import {
 } from "../testing";
 import { Recordings } from "./Recordings";
 
-const withCapture = (capture: Layer.Layer<ScreenCapture>) =>
+const withCapture = (
+  capture: Layer.Layer<ScreenCapture>,
+  focus: ReturnType<typeof FocusTrackerTest> = FocusTrackerTest(),
+) =>
   Recordings.layer.pipe(
     Layer.provide([capture, RecordingStoreTest, IdsTest]),
     Layer.provide(LoggingOverlay.layer),
-    Layer.provideMerge(Layer.mergeAll(FocusTrackerTest(), AppAdaptersTest(), OverlayWindowsTest)),
+    Layer.provideMerge(Layer.mergeAll(focus, AppAdaptersTest(), OverlayWindowsTest)),
   );
 
 describe("Recordings", () => {
@@ -47,6 +51,22 @@ describe("Recordings", () => {
       assert.strictEqual(error._tag, "ScreenCapturePermissionDenied");
       assert.isTrue(Option.isNone(yield* recordings.active));
     }).pipe(Effect.provide(withCapture(ScreenCaptureTest.denied))),
+  );
+
+  it.effect("start asks for Accessibility when it is missing, and starts without it", () =>
+    Effect.gen(function* () {
+      const recordings = yield* Recordings;
+      yield* recordings.start;
+      assert.isTrue(Option.isSome(yield* recordings.active));
+      assert.strictEqual((yield* Ref.get(yield* FocusTrackerLog)).permissionRequests, 1);
+    }).pipe(
+      Effect.provide(
+        withCapture(
+          ScreenCaptureTest.granted,
+          FocusTrackerTest(undefined, { before: "denied", after: "denied" }),
+        ),
+      ),
+    ),
   );
 
   it.effect("stop ends the session and opens the logging overlay", () =>

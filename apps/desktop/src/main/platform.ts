@@ -7,8 +7,8 @@ import { Effect, Layer } from "effect";
 const unsupported = Effect.die(`Kladd has no platform layer for ${process.platform} yet.`);
 
 /**
- * The kladd-capture helper: shipped in Resources/capture (electron-builder.yml), or straight from
- * the Swift build in dev.
+ * The kladd-capture helper (screen capture and focus): shipped in Resources/capture
+ * (electron-builder.yml), or straight from the Swift build in dev.
  */
 const captureHelper = () => ({
   path: app.isPackaged
@@ -24,12 +24,14 @@ const captureHelper = () => ({
  * New OS: add packages/platform-<os> with the same layers and a branch here.
  */
 export const PlatformLive = Layer.unwrap(
-  Effect.sync(() =>
-    process.platform === "darwin"
-      ? Layer.mergeAll(ScreenCaptureDarwin(captureHelper()), FocusTrackerDarwin)
-      : Layer.mergeAll(
-          Layer.effect(ScreenCapture, unsupported),
-          Layer.effect(FocusTracker, unsupported),
-        ),
-  ),
+  Effect.sync(() => {
+    if (process.platform !== "darwin") {
+      return Layer.mergeAll(
+        Layer.effect(ScreenCapture, unsupported),
+        Layer.effect(FocusTracker, unsupported),
+      );
+    }
+    const helper = captureHelper();
+    return Layer.mergeAll(ScreenCaptureDarwin(helper), FocusTrackerDarwin(helper));
+  }),
 );

@@ -6,29 +6,18 @@ import {
 } from "@kladd/domain";
 import { Effect, Fiber, Layer, Option, Stream } from "effect";
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
-
-/** Where the kladd-capture helper is and what it should know about Kladd. apps/desktop fills it in. */
-export interface CaptureHelper {
-  /** The kladd-capture binary built from ../native. */
-  readonly path: string;
-  /** Kladd's .app bundle, offered in PermissionFlow's drag-to-authorize panel. */
-  readonly appBundle: string;
-  /** Kladd's process: its windows (pill, overlays) are left out of captures. */
-  readonly excludePid: number;
-}
-
-/** kladd-capture's exit code for "permission denied" (EX_NOPERM). */
-const exitDenied = 77;
+import {
+  type CaptureHelper,
+  describeFailure,
+  exitDenied,
+  type HelperResult,
+  parsePermission,
+  runHelper,
+  text,
+} from "./helper";
 
 const failed = (cause: unknown) =>
   new ScreenCaptureFailed({ reason: cause instanceof Error ? cause.message : String(cause) });
-
-const text = <E>(stream: Stream.Stream<Uint8Array, E>) =>
-  stream.pipe(
-    Stream.decodeText(),
-    Stream.mkString,
-    Effect.map((s) => s.trim()),
-  );
 
 /**
  * macOS ScreenCapture. Each call runs the Swift helper in ../native (ScreenCaptureKit, plus
@@ -41,16 +30,9 @@ export const ScreenCaptureDarwin = (helper: CaptureHelper) =>
     Effect.gen(function* () {
       const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
 
-      /** Runs the helper to completion. A failure to start it, or a crash, is ScreenCaptureFailed. */
+      /** Runs the helper to completion. A failure to start it is ScreenCaptureFailed. */
       const run = (args: ReadonlyArray<string>) =>
-        Effect.gen(function* () {
-          const handle = yield* spawner.spawn(ChildProcess.make(helper.path, args));
-          const [stdout, stderr, exitCode] = yield* Effect.all(
-            [text(handle.stdout), text(handle.stderr), handle.exitCode],
-            { concurrency: "unbounded" },
-          );
-          return { stdout, stderr, exitCode: Number(exitCode) };
-        }).pipe(Effect.scoped, Effect.mapError(failed));
+        runHelper(spawner, helper, args).pipe(Effect.mapError(failed));
 
       const toResult = (result: { stderr: string; exitCode: number }) =>
         result.exitCode === 0
@@ -61,21 +43,13 @@ export const ScreenCaptureDarwin = (helper: CaptureHelper) =>
                 new ScreenCaptureFailed({ reason: result.stderr || `exit ${result.exitCode}` }),
               );
 
-      /** `status` and `request` print the permission; anything else means the helper broke. */
-      const readPermission = ({
-        stdout,
-        stderr,
-        exitCode,
-      }: {
-        stdout: string;
-        stderr: string;
-        exitCode: number;
-      }): Effect.Effect<ScreenCapturePermission, ScreenCaptureFailed> => {
-        if (exitCode === 0 && stdout === "granted") return Effect.succeed("granted");
-        if (exitCode === 0 && stdout === "denied") return Effect.succeed("denied");
-        return Effect.fail(
-          new ScreenCaptureFailed({ reason: stderr || `exit ${exitCode}: ${stdout}` }),
-        );
+      const readPermission = (
+        result: HelperResult,
+      ): Effect.Effect<ScreenCapturePermission, ScreenCaptureFailed> => {
+        const permission = parsePermission(result);
+        return permission === null
+          ? Effect.fail(new ScreenCaptureFailed({ reason: describeFailure(result) }))
+          : Effect.succeed(permission);
       };
 
       const permission = run(["status"]).pipe(
