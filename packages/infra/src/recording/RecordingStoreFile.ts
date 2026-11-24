@@ -146,7 +146,10 @@ export const RecordingStoreFile = Layer.effect(
       folder: string,
       text: string,
     ) {
-      yield* fs.writeFileString(path.join(folder, sessionFiles.overview), text);
+      // Renamed into place: a folder with overview.md counts as finished, so it is never half written.
+      const file = path.join(folder, sessionFiles.overview);
+      yield* fs.writeFileString(`${file}.tmp`, text);
+      yield* fs.rename(`${file}.tmp`, file);
     }, Effect.orDie);
 
     return RecordingStore.of({

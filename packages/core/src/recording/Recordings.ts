@@ -169,7 +169,6 @@ export class Recordings extends Context.Service<
         const stopped = yield* Effect.gen(function* () {
           const active = yield* SubscriptionRef.get(current);
           if (Option.isNone(active)) return yield* new NoActiveRecording({});
-          yield* store.clear;
           yield* SubscriptionRef.set(current, Option.none());
           // Inside the permit, so a new recording can't start before this capture has stopped.
           const capturing = yield* Ref.getAndSet(running, Option.none());
@@ -181,7 +180,11 @@ export class Recordings extends Context.Service<
               ),
             );
             yield* Scope.close(scope, Exit.void);
+            // Cleared only now: until then finishUnfinished leaves the folder alone.
+            yield* store.clear;
             yield* finishInBackground(folder);
+          } else {
+            yield* store.clear;
           }
           return active.value;
         }).pipe(exclusive);

@@ -478,6 +478,7 @@ final class Session: @unchecked Sendable {
   var start: CMTime?
   /// When `stop` was written: files that arrive during `fileEventsGrace` get this `t`.
   var end: CMTime?
+  var stoppedAt: Date?
   var stopRequested = false
   var stopping = false
 
@@ -550,6 +551,11 @@ final class Session: @unchecked Sendable {
     clicks = clickCount()
     watcher = FileWatcher(root: NSHomeDirectory(), denied: deniedPaths) { [weak self] path in
       guard let self else { return }
+      // After stop, only changes made before it are still let in (FSEvents delivers them late).
+      if let stoppedAt = self.stoppedAt {
+        let changed = (try? FileManager.default.attributesOfItem(atPath: path))?[.modificationDate] as? Date
+        guard let changed, changed <= stoppedAt else { return }
+      }
       self.files.write(["t": seconds(self.t(min(hostNow(), self.end ?? .positiveInfinity))), "path": path])
     }
     NSWorkspace.shared.notificationCenter.addObserver(
@@ -576,6 +582,7 @@ final class Session: @unchecked Sendable {
     focusFrame?.cancel()
     let end = hostNow()
     self.end = end
+    stoppedAt = Date()
     timeline.write(["type": "stop", "t": seconds(t(end)), "at": Session.iso(Date())])
 
     let done = DispatchGroup()
@@ -632,17 +639,15 @@ final class Session: @unchecked Sendable {
       guard !stopping, let (filter, display) = try? await currentFilter() else { return }
       self.filter = filter
       self.display = display
-      let covering = coversExcludedApps()
-      video.update(filter) { self.accepted(covering: covering) }
+      let filtered = filteredPids
+      video.update(filter) { self.accepted(filtered: filtered) }
     }
   }
 
-  /// Whether the filter just built leaves out every excluded app that is running.
-  func coversExcludedApps() -> Bool { runningExcludedPids().isSubset(of: filteredPids) }
-
   /// The stream uses a new filter: video and keyframes go on once it leaves out every excluded app.
-  func accepted(covering: Bool) {
-    guard filterPending, covering else { return }
+  /// Checked now, not when the filter was built: another excluded app can have launched since.
+  func accepted(filtered: Set<pid_t>) {
+    guard filterPending, runningExcludedPids().isSubset(of: filtered) else { return }
     filterPending = false
     video.release()
   }
@@ -655,9 +660,9 @@ final class Session: @unchecked Sendable {
         let (filter, display) = try await currentFilter()
         self.filter = filter
         self.display = display
-        let covering = coversExcludedApps()
+        let filtered = filteredPids
         try await video.start(filter: filter, display: display)
-        accepted(covering: covering)
+        accepted(filtered: filtered)
       } catch {
         logError("cannot restart video: \(error)")
         DispatchQueue.main.asyncAfter(deadline: .now() + 5) { self.restartVideo() }
@@ -759,7 +764,8 @@ final class Session: @unchecked Sendable {
   /// with the JPEG, so a crash during OCR (which can take minutes) still leaves it on the timeline.
   func saveKeyframe(reason: String) {
     guard !stopping, !idle, !capturingFrame, !privateOnScreen() else { return }
-    let now = t()
+    // Rounded like the event's `t`, so the file is always named after it.
+    let now = (t() * 1000).rounded() / 1000
     let name = String(format: "%06d", Int(now.rounded(.down)))
     let file = "frames/\(name).jpg"
     let url = dir.appendingPathComponent(file)
