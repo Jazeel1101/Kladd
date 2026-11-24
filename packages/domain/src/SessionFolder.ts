@@ -133,6 +133,7 @@ export const deniedPathFragments: ReadonlyArray<string> = [
   "/Library/Caches/",
   "/Library/Keychains/",
   "/Library/Cookies/",
+  "/Library/Messages/",
   "/Library/Biome/",
   "/Library/Application Support/AppleMediaServices",
   "/Library/Application Support/com.apple.",
