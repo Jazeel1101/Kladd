@@ -7,3 +7,32 @@ html,
 body {
   background: transparent;
 }
+
+/*
+ * The pill's notch. Docked, it swells off the wall on hover and squishes back when pressed; the
+ * overshoot is the water. While dragged or settling (`.live`) it follows --drop-live every frame,
+ * whatever the pointer is over or pressing: the drag starts with a press, often on a button.
+ * The shapes are CSS variables set by apps/ui/src/pill/RecordingPill.tsx. Only the shape takes
+ * the pointer, so hover follows its outline.
+ */
+.notch-drop {
+  d: var(--drop-rest);
+  transition: d 560ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.notch:not(.live):hover .notch-drop {
+  d: var(--drop-hover);
+}
+.notch:not(.live):has(button:active) .notch-drop {
+  d: var(--drop-press);
+  transition-duration: 140ms;
+  transition-timing-function: cubic-bezier(0.2, 0, 0, 1);
+}
+.notch.live .notch-drop {
+  d: var(--drop-live);
+  transition: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .notch-drop {
+    transition: none;
+  }
+}

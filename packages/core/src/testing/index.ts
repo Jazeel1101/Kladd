@@ -162,6 +162,9 @@ export const OverlayWindowsTest = Layer.unwrap(
     const windows = OverlayWindows.of({
       show: (kind, bounds) => Ref.update(log, (shown) => [...shown, { kind, bounds }]),
       hide: () => Effect.void,
+      prepare: () => Effect.void,
+      moveTo: () => Effect.void,
+      setClickThrough: () => Effect.void,
       size: () => ({ width: 300, height: 400 }),
       workArea: () => Effect.succeed({ x: 0, y: 0, width: 1440, height: 900 }),
     });
