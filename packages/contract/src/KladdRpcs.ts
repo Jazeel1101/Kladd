@@ -22,11 +22,13 @@ export class KladdRpcs extends RpcGroup.make(
     success: Schema.NullOr(RecordingSession),
     stream: true,
   }),
-  /** What the logging overlay was last opened for (null before), then every later open. */
+  /** What the logging overlay was last opened for (null before), then every change while it is open. */
   Rpc.make("WatchLoggingOverlay", {
     success: Schema.NullOr(LoggingOverlayInfo),
     stream: true,
   }),
+  /** Closes the logging overlay and stops following the app it was opened for. */
+  Rpc.make("CloseLoggingOverlay"),
   /** Pops up the pill's native menu: start/stop recording, show the logging overlay, Settings, Quit. */
   Rpc.make("OpenPillMenu"),
   /** The screenshot in flight and the attached ones, then every change. ⌃⇧C takes one. */

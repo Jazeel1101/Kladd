@@ -43,6 +43,31 @@ export const placeOverlay = (anchor: Rect, size: Size, screen: Rect): Rect => {
   };
 };
 
+/**
+ * How an overlay relates to its anchor (GLOSSARY: "plassering"): `beside` it (placeOverlay), or
+ * `inside` its top-right corner (placeInside), for an anchor that is a large canvas.
+ */
+export type OverlayPlacement = "beside" | "inside";
+
+/**
+ * Where an overlay goes inside `anchor`, such as a page canvas whose edges hold other UI: its
+ * top-right corner, inset by the gap. When the overlay would take more than half the anchor's width,
+ * it goes beside the anchor instead (placeOverlay), so it doesn't hide what the user writes.
+ */
+export const placeInside = (anchor: Rect, size: Size, screen: Rect): Rect => {
+  if (size.width + 2 * GAP > anchor.width / 2) return placeOverlay(anchor, size, screen);
+  return {
+    x: clamp(
+      anchor.x + anchor.width - GAP - size.width,
+      screen.x,
+      screen.x + screen.width - size.width,
+    ),
+    y: clamp(anchor.y + GAP, screen.y, screen.y + screen.height - size.height),
+    width: size.width,
+    height: size.height,
+  };
+};
+
 /** Where an overlay goes when there is no anchor: vertically centred at the right edge of the screen. */
 export const placeWithoutAnchor = (size: Size, screen: Rect): Rect => ({
   x: screen.x + screen.width - size.width - GAP,

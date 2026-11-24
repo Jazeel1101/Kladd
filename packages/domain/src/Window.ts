@@ -27,5 +27,8 @@ export type WindowKind = typeof WindowKind.Type;
  */
 export const OpenableWindow = Schema.Literals(["expanded", "zones"]);
 
-/** Windows the UI may close itself (contract HideWindow). Not `pill`: it always stays. */
-export const ClosableWindow = Schema.Literals(["logging", "expanded", "zones"]);
+/**
+ * Windows the UI may close itself (contract HideWindow). Not `pill`: it always stays. Not `logging`:
+ * core's LoggingOverlay closes it (contract CloseLoggingOverlay), because it follows focus while open.
+ */
+export const ClosableWindow = Schema.Literals(["expanded", "zones"]);

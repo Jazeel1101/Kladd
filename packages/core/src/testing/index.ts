@@ -17,7 +17,7 @@ import {
   type RecordingSession,
   type WindowKind,
 } from "@kladd/domain";
-import { Context, Effect, Layer, Option, Ref } from "effect";
+import { Context, Effect, Layer, Option, Ref, Stream } from "effect";
 import { AppAdapters } from "../ports/AppAdapters";
 import { FocusTracker } from "../ports/FocusTracker";
 import { Ids } from "../ports/Ids";
@@ -112,6 +112,7 @@ export class FocusTrackerLog extends Context.Service<
  * Always reports `snapshot` (default: nothing known, as without Accessibility permission).
  * `permission` is what it reports before and after a request; counts requests in FocusTrackerLog.
  * Given a FocusTrackingFailed, every call fails with it. Given an Effect, `current` runs it.
+ * `watch` emits `changes` (default: what `current` reports, then nothing).
  */
 export const FocusTrackerTest = (
   snapshot: FocusSnapshot | FocusTrackingFailed | Effect.Effect<FocusSnapshot> = emptyFocus,
@@ -121,6 +122,7 @@ export const FocusTrackerTest = (
     /** Runs before a request answers: Effect.never for a user who leaves the prompt open. */
     readonly answer?: Effect.Effect<void>;
   } = { before: "granted", after: "granted" },
+  changes?: Stream.Stream<FocusSnapshot, FocusTrackingFailed>,
 ) =>
   Layer.unwrap(
     Effect.gen(function* () {
@@ -129,12 +131,14 @@ export const FocusTrackerTest = (
       const failed = snapshot instanceof FocusTrackingFailed ? snapshot : null;
       const orFail = <A>(effect: Effect.Effect<A>) =>
         failed === null ? effect : Effect.andThen(effect, Effect.fail(failed));
+      const read = Effect.isEffect(snapshot)
+        ? snapshot
+        : snapshot instanceof FocusTrackingFailed
+          ? Effect.fail(snapshot)
+          : Effect.succeed(snapshot);
       const tracker = FocusTracker.of({
-        current: Effect.isEffect(snapshot)
-          ? snapshot
-          : snapshot instanceof FocusTrackingFailed
-            ? Effect.fail(snapshot)
-            : Effect.succeed(snapshot),
+        current: read,
+        watch: changes ?? Stream.fromEffect(read),
         permission: orFail(Ref.get(current)),
         requestPermission: orFail(
           Ref.update(log, (l) => ({ permissionRequests: l.permissionRequests + 1 })).pipe(

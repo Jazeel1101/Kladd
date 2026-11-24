@@ -66,6 +66,48 @@ func caret(_ element: AXUIElement) -> CGRect? {
   return bounds
 }
 
+/// The first value `pick` finds in `element` or its descendants, depth first.
+func firstInTree(_ element: AXUIElement, depth: Int = 0, _ pick: (AXUIElement) -> String?) -> String? {
+  if let value = pick(element), !value.isEmpty { return value }
+  guard depth < 4, let children = attribute(element, kAXChildrenAttribute) as? [AXUIElement] else { return nil }
+  for child in children {
+    if let value = firstInTree(child, depth: depth + 1, pick) { return value }
+  }
+  return nil
+}
+
+/// How much of the window's AX tree `selection` reads: OneNote's sidebars are about 100 elements in.
+let selectionMaxElements = 400
+let selectionDeadline: TimeInterval = 0.2
+
+/// The selected rows of every list (outline or table) in `window`, breadth first, such as the current
+/// section and page in a sidebar. Each row is its first AXIdentifier, when the app sets one, and its
+/// first text. Lists aren't walked row by row: AXSelectedRows names the selected ones.
+func selection(_ window: AXUIElement) -> [[String: Any]] {
+  let deadline = Date().addingTimeInterval(selectionDeadline)
+  var queue = [window]
+  var next = 0
+  var items: [[String: Any]] = []
+  while next < queue.count, next < selectionMaxElements, Date() < deadline {
+    let element = queue[next]
+    next += 1
+    let role = attribute(element, kAXRoleAttribute) as? String
+    guard role == kAXOutlineRole || role == kAXTableRole else {
+      queue += attribute(element, kAXChildrenAttribute) as? [AXUIElement] ?? []
+      continue
+    }
+    for row in attribute(element, kAXSelectedRowsAttribute) as? [AXUIElement] ?? [] {
+      let id = firstInTree(row) { attribute($0, "AXIdentifier") as? String }
+      let text = firstInTree(row) {
+        attribute($0, kAXRoleAttribute) as? String == kAXStaticTextRole
+          ? attribute($0, kAXValueAttribute) as? String : nil
+      }
+      items.append(["id": id ?? NSNull(), "text": text ?? NSNull()])
+    }
+  }
+  return items
+}
+
 func json(_ rect: CGRect?) -> Any {
   guard let rect else { return NSNull() }
   return ["x": rect.origin.x, "y": rect.origin.y, "width": rect.width, "height": rect.height]
@@ -90,13 +132,14 @@ func userApp(excludePid: pid_t?) -> NSRunningApplication? {
   return nil
 }
 
-func focusSnapshot(excludePid: pid_t?) -> [String: Any] {
+/// What `front` shows at this moment: its focused window, element, caret and list selection.
+func focusSnapshot(of front: NSRunningApplication?) -> [String: Any] {
   var snapshot: [String: Any] = [
     "app": NSNull(), "window": NSNull(), "title": NSNull(), "element": NSNull(), "caret": NSNull(),
+    "selection": [],
   ]
   // An app's focused window and element stay readable over AX while it is in the background.
-  guard let front = userApp(excludePid: excludePid), let bundleId = front.bundleIdentifier
-  else { return snapshot }
+  guard let front, let bundleId = front.bundleIdentifier else { return snapshot }
   snapshot["app"] = ["bundleId": bundleId, "name": front.localizedName ?? bundleId]
   guard AXIsProcessTrusted() else { return snapshot }
 
@@ -106,6 +149,7 @@ func focusSnapshot(excludePid: pid_t?) -> [String: Any] {
   if let window = childElement(app, kAXFocusedWindowAttribute) {
     snapshot["window"] = json(frame(window))
     if let title = attribute(window, kAXTitleAttribute) as? String, !title.isEmpty { snapshot["title"] = title }
+    snapshot["selection"] = selection(window)
   }
   if let element = childElement(app, kAXFocusedUIElementAttribute) {
     snapshot["element"] = json(frame(element))
@@ -114,11 +158,76 @@ func focusSnapshot(excludePid: pid_t?) -> [String: Any] {
   return snapshot
 }
 
-func printFocus(excludePid: pid_t?) {
+/// One JSON line. Sorted keys, so equal snapshots print equal lines.
+func focusLine(_ snapshot: [String: Any]) -> String {
   do {
-    let data = try JSONSerialization.data(withJSONObject: focusSnapshot(excludePid: excludePid))
-    say(String(decoding: data, as: UTF8.self))
+    let data = try JSONSerialization.data(withJSONObject: snapshot, options: [.sortedKeys])
+    return String(decoding: data, as: UTF8.self)
   } catch {
     fail("cannot encode focus: \(error)")
+  }
+}
+
+func printFocus(excludePid: pid_t?) {
+  say(focusLine(focusSnapshot(of: userApp(excludePid: excludePid))))
+}
+
+// MARK: - Watching
+
+/// What changes the snapshot: another page or section (selected rows), window, title or focused element.
+let watchedNotifications = [
+  kAXSelectedRowsChangedNotification, kAXFocusedWindowChangedNotification,
+  kAXTitleChangedNotification, kAXFocusedUIElementChangedNotification,
+]
+/// One change fires a burst of notifications (OneNote: about ten within 50 ms); print once after it.
+let watchDebounce: TimeInterval = 0.15
+
+/// Runs on the main queue after a burst of notifications. AXObserver callbacks are C functions, so
+/// they can't capture it.
+nonisolated(unsafe) var onFocusNotification: () -> Void = {}
+/// Kept for the life of the process: a released observer stops calling back without any error.
+nonisolated(unsafe) var focusObserver: AXObserver?
+
+/// `kladd-capture watch-focus`: the app the user is in, as `focus` prints it, then a new line each
+/// time that app's snapshot changes. It keeps following that app, not whichever is in front. Ends when
+/// the app quits or stdin closes (Kladd went away).
+@MainActor func watchFocus(excludePid: pid_t?) {
+  let front = userApp(excludePid: excludePid)
+  var last = focusLine(focusSnapshot(of: front))
+  say(last)
+  guard let front, AXIsProcessTrusted() else { exit(0) }
+
+  var pending: DispatchWorkItem?
+  onFocusNotification = {
+    pending?.cancel()
+    let work = DispatchWorkItem {
+      let line = focusLine(focusSnapshot(of: front))
+      if line != last {
+        last = line
+        say(line)
+      }
+    }
+    pending = work
+    DispatchQueue.main.asyncAfter(deadline: .now() + watchDebounce, execute: work)
+  }
+
+  guard
+    AXObserverCreate(front.processIdentifier, { _, _, _, _ in onFocusNotification() }, &focusObserver)
+      == .success,
+    let observer = focusObserver
+  else { fail("cannot observe \(front.bundleIdentifier ?? "the app")") }
+  let app = AXUIElementCreateApplication(front.processIdentifier)
+  for name in watchedNotifications { AXObserverAddNotification(observer, app, name as CFString, nil) }
+  CFRunLoopAddSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(observer), .defaultMode)
+
+  NSWorkspace.shared.notificationCenter.addObserver(
+    forName: NSWorkspace.didTerminateApplicationNotification, object: nil, queue: .main
+  ) { note in
+    let quit = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
+    if quit?.processIdentifier == front.processIdentifier { exit(0) }
+  }
+  Thread.detachNewThread {
+    while readLine() != nil {}
+    exit(0)
   }
 }

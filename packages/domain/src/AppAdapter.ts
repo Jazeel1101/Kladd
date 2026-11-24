@@ -1,5 +1,5 @@
 import type { FocusSnapshot } from "./Focus";
-import type { Rect } from "./Placement";
+import type { OverlayPlacement, Rect } from "./Placement";
 import type { WritingTarget } from "./WritingTarget";
 
 /**
@@ -13,6 +13,8 @@ export interface AppAdapter {
   readonly bundleIds: ReadonlyArray<string>;
   /** The rect to place the overlay next to (GLOSSARY: Anchor), or null to use the no-anchor position. */
   readonly anchor: (focus: FocusSnapshot) => Rect | null;
+  /** Whether the overlay sits beside the anchor or inside its top-right corner. */
+  readonly placement: OverlayPlacement;
   /** What the user is writing in (GLOSSARY: WritingTarget). */
   readonly target: (focus: FocusSnapshot) => WritingTarget;
 }
@@ -23,10 +25,14 @@ export const defaultTarget = (focus: FocusSnapshot): WritingTarget => ({
   document: focus.title,
 });
 
-/** Declares an adapter, so every adapter file reads the same way. `target` defaults to defaultTarget. */
+/**
+ * Declares an adapter, so every adapter file reads the same way. `target` defaults to defaultTarget,
+ * `placement` to "beside".
+ */
 export const makeAppAdapter = (
-  adapter: Omit<AppAdapter, "target"> & Partial<Pick<AppAdapter, "target">>,
-): AppAdapter => ({ target: defaultTarget, ...adapter });
+  adapter: Omit<AppAdapter, "target" | "placement"> &
+    Partial<Pick<AppAdapter, "target" | "placement">>,
+): AppAdapter => ({ target: defaultTarget, placement: "beside", ...adapter });
 
 /** The adapter for the front app, or `fallback` when none matches. */
 export const adapterFor = (

@@ -43,6 +43,8 @@ interface WindowSpec {
    * never takes the pointer or focus, and keeps animating while it is hidden.
    */
   readonly effect?: true;
+  /** The user can drag it by its UI's drag region (`-webkit-app-region: drag`). Overlays default to fixed. */
+  readonly movable?: true;
 }
 
 /**
@@ -82,6 +84,8 @@ const windowTable: Record<WindowKind, WindowSpec> = {
   logging: {
     size: { width: 360, height: 480 },
     overlay: true,
+    // By its header. The next open places it again; following focus only changes its text.
+    movable: true,
     // Normally placed by core's LoggingOverlay; this is only the fallback.
     position: placeWithoutAnchor,
   },
@@ -144,6 +148,7 @@ const createWindow = (spec: WindowSpec) => {
   const window = new BrowserWindow({
     ...(spec.overlay ? overlayOptions : { title: "Kladd" }),
     ...(spec.noShadow ? { hasShadow: false } : {}),
+    ...(spec.movable ? { movable: true } : {}),
     ...(spec.effect ? { focusable: false, enableLargerThanScreen: true } : {}),
     // Already where it opens, so its UI reads its real position while it loads (the pill does).
     ...defaultBounds(spec, workArea(null)),

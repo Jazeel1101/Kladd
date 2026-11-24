@@ -15,10 +15,7 @@ const startElectron = () => {
   });
   child.on("exit", (code, signal) => {
     // Quitting the app (not a restart) ends the dev session.
-    if (signal === null && child === electron) {
-      pack.kill();
-      process.exit(code ?? 0);
-    }
+    if (signal === null && child === electron) process.exit(code ?? 0);
   });
   electron = child;
 };
@@ -39,7 +36,27 @@ if (process.platform === "darwin") {
   if (swift.status !== 0) process.exit(swift.status ?? 1);
 }
 
-const pack = spawn("vp", ["pack", "--watch"], { stdio: ["ignore", "pipe", "inherit"] });
+// `vp` starts the watcher as its own child, so killing `vp` alone would leave the watcher running.
+// In its own process group, the whole group can be stopped: on any exit of this script, including
+// Ctrl+C, which no longer reaches a detached group by itself.
+const pack = spawn("vp", ["pack", "--watch"], {
+  stdio: ["ignore", "pipe", "inherit"],
+  detached: true,
+});
+const stopPack = () => {
+  try {
+    if (pack.pid !== undefined) process.kill(-pack.pid, "SIGTERM");
+  } catch {
+    // Already gone.
+  }
+};
+process.on("exit", () => {
+  stopPack();
+  electron?.kill();
+});
+for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"] as const) {
+  process.on(signal, () => process.exit(130));
+}
 pack.stdout?.on("data", (chunk: Buffer) => {
   process.stdout.write(chunk);
   if (/Build complete|Rebuilt in/.test(chunk.toString())) restart();
