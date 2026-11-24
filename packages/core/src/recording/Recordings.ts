@@ -27,6 +27,7 @@ import { RecordingStore } from "../ports/RecordingStore";
 import { ScreenCapture } from "../ports/ScreenCapture";
 import { SessionCapture, type SessionCaptureHandle } from "../ports/SessionCapture";
 import { Transcriber } from "../ports/Transcriber";
+import { Clips } from "./Clips";
 import { finishSession } from "./finishSession";
 
 /** The capture writing the active recording's session folder. */
@@ -37,8 +38,9 @@ interface Running {
 }
 
 /**
- * Use case: start, stop and watch recordings. Each recording captures into its own session folder,
- * finished in the background after stop (finishSession). Stopping a recording starts logging mode.
+ * Use case: start, stop and watch work sessions (GLOSSARY: "økt"). Each captures into its own
+ * session folder, finished in the background after stop (finishSession); clips (Clips) can be
+ * taken while it runs. Stopping a recording starts logging mode.
  * A folder left unfinished, such as by a crash or by a stop before the model was ready, is finished
  * when Kladd opens and once the model is ready; a crashed recording is not resumed.
  * A use case depends on ports (../ports) and other use cases, never on infra or platform code.
@@ -56,8 +58,8 @@ export class Recordings extends Context.Service<
       RecordingAlreadyActive | ScreenCapturePermissionDenied | ScreenCaptureFailed
     >;
     /**
-     * Stops the active recording and opens the logging overlay. Always stops: a capture that fails
-     * to finish is logged, and the folder is finished from what it wrote.
+     * Stops the active recording's clip, then the recording, and opens the logging overlay. Always
+     * stops: a capture that fails to finish is logged, and the folder is finished from what it wrote.
      */
     readonly stop: Effect.Effect<RecordingSession, NoActiveRecording>;
     readonly active: Effect.Effect<Option.Option<RecordingSession>>;
@@ -71,6 +73,7 @@ export class Recordings extends Context.Service<
       const capture = yield* ScreenCapture;
       const sessionCapture = yield* SessionCapture;
       const transcriber = yield* Transcriber;
+      const clips = yield* Clips;
       const focus = yield* FocusTracker;
       const store = yield* RecordingStore;
       const ids = yield* Ids;
@@ -90,15 +93,15 @@ export class Recordings extends Context.Service<
           yield* store.updateInfo(folder, (info) => ({ ...info, stoppedAt }));
           yield* finishSession(folder).pipe(
             Effect.provideService(RecordingStore, store),
-            Effect.provideService(Transcriber, transcriber),
+            Effect.provideService(Clips, clips),
           );
         }).pipe(
           Effect.ignoreCause({ log: "Warn", message: "Could not finish the session folder" }),
           Effect.forkIn(layerScope),
         );
 
-      // A folder is finished once it has overview.md, and transcript.jsonl if it has audio; nothing
-      // else marks it, so a crash or quit before finishSession leaves it to the next launch. Each
+      // A folder is finished once it has overview.md and a transcript for every clip with sound;
+      // nothing else marks it, so a crash or quit before finishSession leaves it to the next launch. Each
       // runs once per launch: one that keeps failing waits for the next.
       const finishUnfinished = Effect.fn("Recordings.finishUnfinished")(function* (
         needsModel: boolean,
@@ -110,10 +113,10 @@ export class Recordings extends Context.Service<
             const recording = yield* store.folder(active.value.id);
             if (Option.contains(recording, folder)) continue;
           }
-          if (Option.isSome(yield* store.audio(folder)) !== needsModel) continue;
+          if ((yield* store.untranscribed(folder)).length > 0 !== needsModel) continue;
           yield* finishSession(folder).pipe(
             Effect.provideService(RecordingStore, store),
-            Effect.provideService(Transcriber, transcriber),
+            Effect.provideService(Clips, clips),
             Effect.ignoreCause({ log: "Warn", message: "Could not finish the session folder" }),
           );
         }
@@ -156,6 +159,7 @@ export class Recordings extends Context.Service<
           ),
         );
         yield* Ref.set(running, Option.some({ folder, handle, scope }));
+        yield* clips.begin(folder);
         yield* SubscriptionRef.set(current, Option.some(recording));
         yield* askForAccessibility.pipe(
           Effect.provideService(FocusTracker, focus),
@@ -172,6 +176,7 @@ export class Recordings extends Context.Service<
           yield* SubscriptionRef.set(current, Option.none());
           // Inside the permit, so a new recording can't start before this capture has stopped.
           const capturing = yield* Ref.getAndSet(running, Option.none());
+          yield* clips.end;
           if (Option.isSome(capturing)) {
             const { folder, handle, scope } = capturing.value;
             yield* handle.stop.pipe(

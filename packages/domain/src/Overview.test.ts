@@ -8,7 +8,6 @@ const session: OverviewInput["session"] = {
   id: RecordingSessionId.make("abc"),
   startedAt: DateTime.makeUnsafe("2026-11-24T13:02:00Z"),
   stoppedAt: DateTime.makeUnsafe("2026-11-24T13:42:00Z"),
-  language: "no",
   appVersion: "0.1.0",
   layout: 1,
 };
@@ -18,7 +17,6 @@ const start: TimelineEvent = {
   t: 0,
   at: "2026-11-24T13:02:00Z",
   accessibility: true,
-  microphone: true,
 };
 const focus = (t: number, app: string, title: string | null, url?: string): TimelineEvent => ({
   type: "focus",
@@ -66,11 +64,29 @@ const realistic: OverviewInput = {
     { t: 760, path: "/Users/elev/Code/robot/src/sensor.c" },
     { t: 1900, path: "/Users/elev/Documents/Logg uke 47.docx" },
   ],
-  transcript: [
-    { t: 30, end: 36, text: "Nå skal jeg få sensoren til å måle avstand." },
-    { t: 430, end: 440, text: "Trig-pinnen må være høy i ti mikrosekunder." },
-    { t: 720, end: 726, text: "Ok, det funker | nesten." },
-    { t: 1700, end: 1710, text: "Så skriver jeg loggen." },
+  clips: [
+    {
+      name: "001",
+      info: {
+        startedAt: DateTime.makeUnsafe("2026-11-24T13:09:10Z"),
+        stoppedAt: DateTime.makeUnsafe("2026-11-24T13:11:40Z"),
+        language: "no",
+      },
+      sound: true,
+      segments: 4,
+      marks: 2,
+    },
+    {
+      name: "002",
+      info: {
+        startedAt: DateTime.makeUnsafe("2026-11-24T13:30:00Z"),
+        stoppedAt: DateTime.makeUnsafe("2026-11-24T13:31:00Z"),
+        language: null,
+      },
+      sound: false,
+      segments: null,
+      marks: 0,
+    },
   ],
 };
 
@@ -109,50 +125,53 @@ describe("segmentsOf", () => {
 });
 
 describe("renderOverview", () => {
-  it("renders a realistic session", () => {
+  it("renders a realistic session, with its clips on the session clock", () => {
     const text = renderOverview(realistic);
-    assert.include(text, "Duration 0:40:00 (t=0–2400). Spoken language: no.");
-    assert.notInclude(text, "Missing data");
+    assert.include(text, "Duration 0:40:00 (t=0–2400). Clips: 2.");
     assert.include(
       text,
-      "| 415–700 | Safari | HC-SR04 datasheet — https://cdn.example.com/HCSR04.pdf | 000416 000420 | Trig-pinnen må være høy i ti mikrosekunder. |",
+      "| 415–700 | Safari | HC-SR04 datasheet — https://cdn.example.com/HCSR04.pdf | 000416 000420 |",
     );
-    assert.include(text, "| 1260–1620 | *idle* |  |  |  |");
-    assert.include(text, "det funker \\| nesten.");
+    assert.include(text, "| 1260–1620 | *idle* |  |  |");
+    assert.include(text, "| 001 | 430–580 | clips/001/ | yes | 4 lines | 2 |");
+    assert.include(text, "| 002 | 1680–1740 | clips/002/ | no | no | 0 |");
+    assert.include(text, "Missing data:\n- No sound in clip 002: no microphone permission");
     assert.include(text, "/Users/elev/Code/robot/src/\n- main.c (t=120)\n- sensor.c (t=760)");
   });
 
-  it("names missing data: no Accessibility, no microphone, a crash", () => {
+  it("names missing data: no Accessibility, a crash, a clip cut short or not transcribed", () => {
+    const [clip] = realistic.clips;
+    assert.isDefined(clip);
     const text = renderOverview({
-      session: { ...session, stoppedAt: null, language: null },
-      events: [{ ...start, accessibility: false, microphone: false }, focus(0, "Code", null)],
+      session: { ...session, stoppedAt: null },
+      events: [{ ...start, accessibility: false }, focus(0, "Code", null)],
       files: [],
-      transcript: [],
+      clips: [{ ...clip, segments: null, info: { ...clip.info, stoppedAt: null } }],
     });
     assert.include(text, "Missing data:");
     assert.include(text, "without a `stop` event (a crash)");
     assert.include(text, "No Accessibility permission");
-    assert.include(text, "No microphone");
-    assert.notInclude(text, "No transcript");
-    assert.include(text, "Spoken language: unknown.");
+    assert.include(text, "No transcript.jsonl yet in clip 001");
+    assert.include(text, "No stop time for clip 001 (a crash)");
+    assert.include(text, "| 001 | 430–? |");
     assert.include(text, "None.");
   });
 
-  it("says when there is a microphone but no transcript", () => {
-    const text = renderOverview({ ...realistic, transcript: [] });
-    assert.include(text, "No transcript: transcript.jsonl is missing or empty.");
+  it("says None. without clips, and has no clip reading notes", () => {
+    const text = renderOverview({ ...realistic, clips: [] });
+    assert.include(text, "## Clips\n\nNone.");
+    assert.notInclude(text, "marks.jsonl");
   });
 
-  it("caps speech, keyframes and files per folder, and says where the rest is", () => {
+  it("caps keyframes and files per folder, and says where the rest is", () => {
     const frames = Array.from({ length: 10 }, (_, i) => frame(i * 20 + 1));
     const text = renderOverview({
       session,
       events: [start, focus(0, "Code", "x"), ...frames, { type: "stop", t: 300, at: "x" }],
       files: Array.from({ length: 12 }, (_, i) => ({ t: i, path: `/Users/elev/p/f${i}.ts` })),
-      transcript: [{ t: 5, end: 200, text: "ord ".repeat(200) }],
+      clips: [],
     });
     assert.include(text, "000101 +4 |");
-    assert.include(text, "…");
     assert.include(text, "- +4 more");
     assert.include(text, "all of them are in `files.jsonl`");
   });

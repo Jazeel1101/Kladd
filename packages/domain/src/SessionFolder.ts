@@ -2,9 +2,10 @@ import { Schema } from "effect";
 import { RecordingSessionId } from "./RecordingSession";
 
 /**
- * The folder one recording is written to (GLOSSARY: "opptaksmappe"), and the contract between
+ * The folder one work session is written to (GLOSSARY: "opptaksmappe"), and the contract between
  * capture and the summary agent, which is only told to start with `overview.md`.
- * Every `t` is seconds since the recording started; frame and focus files are named after it.
+ * Every `t` is seconds since the session started; frame and focus files are named after it.
+ * Clips taken in the session are in `clips/` (clipsFolder), each with its own clock.
  */
 export const sessionFiles = {
   /** SessionInfo. */
@@ -13,16 +14,10 @@ export const sessionFiles = {
   timeline: "timeline.jsonl",
   /** Live: one FileChange per line, each path once. */
   files: "files.jsonl",
-  /** Live: the screen at lower resolution. */
-  video: "screen.mp4",
   /** Live: `<t>.jpg` keyframes at full resolution, with `<t>.txt` OCR text beside them. */
   frames: "frames",
   /** Live: `<t>.json`, the FocusSnapshot at each keyframe. */
   focus: "focus",
-  /** Live: the microphone. Missing without microphone permission. */
-  audio: "audio.m4a",
-  /** After stop: one TranscriptSegment per line. */
-  transcript: "transcript.jsonl",
   /** After stop: the agent's map, from renderOverview. */
   overview: "overview.md",
   /** Written by the summary agent. */
@@ -88,8 +83,6 @@ export const TimelineEvent = Schema.Union([
     at: Schema.String,
     /** False without Accessibility permission: `focus` events then carry app names only. */
     accessibility: Schema.Boolean,
-    /** False without microphone permission: there is no `audio.m4a`. */
-    microphone: Schema.Boolean,
   }),
   Schema.Struct({ type: Schema.Literal("stop"), t, at: Schema.String }),
   /** The app, window, title or URL in front changed. */
@@ -126,7 +119,7 @@ export const TimelineEvent = Schema.Union([
 ]);
 export type TimelineEvent = typeof TimelineEvent.Type;
 
-/** One line of `files.jsonl`: a file that changed during the recording. */
+/** One line of `files.jsonl`: a file that changed during the session. */
 export const FileChange = Schema.Struct({
   /** When it first changed. */
   t,
@@ -135,7 +128,7 @@ export const FileChange = Schema.Struct({
 });
 export type FileChange = typeof FileChange.Type;
 
-/** One line of `transcript.jsonl`: what was said from `t` to `end`. */
+/** One line of a clip's `transcript.jsonl`: what was said from `t` to `end`. */
 export const TranscriptSegment = Schema.Struct({
   t,
   end: Schema.Number,
@@ -149,8 +142,6 @@ export const SessionInfo = Schema.Struct({
   startedAt: Schema.DateTimeUtc,
   /** Null while recording, and after a crash. */
   stoppedAt: Schema.NullOr(Schema.DateTimeUtc),
-  /** The spoken language Whisper detected, such as "no". Null without a transcript. */
-  language: Schema.NullOr(Schema.String),
   /** Kladd's version. */
   appVersion: Schema.String,
   /** Version of this folder layout. */

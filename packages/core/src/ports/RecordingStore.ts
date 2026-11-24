@@ -1,4 +1,5 @@
 import type {
+  ClipInfo,
   OverviewInput,
   RecordingSession,
   RecordingSessionId,
@@ -6,8 +7,9 @@ import type {
 } from "@kladd/domain";
 import { Context, type Effect, type Option } from "effect";
 
-/** The audio of a session folder, and where its transcript goes. */
-export interface SessionAudio {
+/** A clip with sound and no transcript yet: its folder, its audio, and where its transcript goes. */
+export interface UntranscribedClip {
+  readonly folder: string;
   readonly audio: string;
   readonly transcript: string;
 }
@@ -22,15 +24,15 @@ export class RecordingStore extends Context.Service<
   {
     readonly active: Effect.Effect<Option.Option<RecordingSession>>;
     /**
-     * Creates the session's folder with its `session.json` (not stopped, no language yet) and
+     * Creates the session's folder with its `session.json` (not stopped yet) and
      * makes it the active session. Returns the folder.
      */
     readonly save: (session: RecordingSession) => Effect.Effect<string>;
     /** Forgets the active session; its folder stays. */
     readonly clear: Effect.Effect<void>;
     /**
-     * Every session folder not finished yet: without `overview.md`, or with `audio.m4a` but no
-     * `transcript.jsonl`. Includes the active session's.
+     * Every session folder not finished yet: without `overview.md`, or with an untranscribed clip.
+     * Includes the active session's.
      */
     readonly unfinished: Effect.Effect<ReadonlyArray<string>>;
     /** The folder `save` created for `id`, if it did. */
@@ -40,8 +42,15 @@ export class RecordingStore extends Context.Service<
       folder: string,
       update: (info: SessionInfo) => SessionInfo,
     ) => Effect.Effect<void>;
-    /** The folder's `audio.m4a`, if the microphone recorded one. */
-    readonly audio: (folder: string) => Effect.Effect<Option.Option<SessionAudio>>;
+    /** Creates the session folder's next clip folder, `clips/<clipName>`, with `info`. Returns it. */
+    readonly createClip: (folder: string, info: ClipInfo) => Effect.Effect<string>;
+    /** Changes a clip folder's `clip.json`. */
+    readonly updateClip: (
+      clip: string,
+      update: (info: ClipInfo) => ClipInfo,
+    ) => Effect.Effect<void>;
+    /** The session folder's clips with `audio.m4a` and no `transcript.jsonl`, in order. */
+    readonly untranscribed: (folder: string) => Effect.Effect<ReadonlyArray<UntranscribedClip>>;
     /**
      * Reads back everything `overview.md` is made from. Skips lines that don't decode, such as a
      * last line cut off by a crash, and files that don't exist.

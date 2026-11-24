@@ -9,16 +9,15 @@ export interface SessionCaptureHandle {
 
 /**
  * Port: writes the live files of a session folder (GLOSSARY: "opptaksmappe") while a recording
- * runs: timeline, changed files, video, keyframes, focus and audio. Implemented per OS in
+ * runs: timeline, changed files, keyframes with OCR, and focus. Implemented per OS in
  * packages/platform-<os>. Test double: SessionCaptureTest in ../testing.
  */
 export class SessionCapture extends Context.Service<
   SessionCapture,
   {
     /**
-     * Starts capturing into `dir`, which exists; succeeds once it is recording. Asks for
-     * microphone permission the first time and records without audio if it is denied. Closing the
-     * scope stops it too, but can't report a failure.
+     * Starts capturing into `dir`, which exists; succeeds once it is recording. Closing the scope
+     * stops it too, but can't report a failure.
      */
     readonly start: (
       dir: string,

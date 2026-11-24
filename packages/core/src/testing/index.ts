@@ -4,6 +4,9 @@
  */
 import {
   type AccessibilityPermission,
+  type ClipInfo,
+  clipName,
+  clipsFolder,
   FocusTrackingFailed,
   type ScreenCaptureFailed,
   type SessionInfo,
@@ -147,8 +150,8 @@ export const TranscriberTest = (language: string | TranscriptionFailed = "no") =
   );
 
 /**
- * In-memory store. Starts empty. Folders are `/recordings/<id>`, with no audio and no live files;
- * RecordingStoreFile's tests cover reading real ones.
+ * In-memory store. Starts empty. Folders are `/recordings/<id>`, clips `/recordings/<id>/clips/001`,
+ * with no sound and no live files; RecordingStoreFile's tests cover reading real ones.
  */
 export const RecordingStoreTest = Layer.effect(
   RecordingStore,
@@ -156,6 +159,7 @@ export const RecordingStoreTest = Layer.effect(
     const ref = yield* Ref.make(Option.none<RecordingSession>());
     const infos = yield* Ref.make(new Map<string, SessionInfo>());
     const overviews = yield* Ref.make(new Set<string>());
+    const clips = yield* Ref.make(new Map<string, ClipInfo>());
     const folderOf = (id: string) => `/recordings/${id}`;
     const info = (folder: string) =>
       Ref.get(infos).pipe(
@@ -170,7 +174,6 @@ export const RecordingStoreTest = Layer.effect(
           id: session.id,
           startedAt: session.startedAt,
           stoppedAt: null,
-          language: null,
           appVersion: "0.0.0-test",
           layout: 1,
         };
@@ -191,9 +194,35 @@ export const RecordingStoreTest = Layer.effect(
         Effect.flatMap(info(folder), (current) =>
           Ref.update(infos, (all) => new Map(all).set(folder, update(current))),
         ),
-      audio: () => Effect.succeedNone,
+      createClip: (folder, created) =>
+        Ref.modify(clips, (all) => {
+          const inFolder = [...all.keys()].filter((clip) => clip.startsWith(`${folder}/`));
+          const clip = `${folder}/${clipsFolder}/${clipName(inFolder.length + 1)}`;
+          return [clip, new Map(all).set(clip, created)];
+        }),
+      updateClip: (clip, update) =>
+        Ref.update(clips, (all) => {
+          const current = all.get(clip);
+          return current === undefined ? all : new Map(all).set(clip, update(current));
+        }),
+      untranscribed: () => Effect.succeed([]),
       read: (folder) =>
-        Effect.map(info(folder), (session) => ({ session, events: [], files: [], transcript: [] })),
+        Effect.all({ session: info(folder), all: Ref.get(clips) }).pipe(
+          Effect.map(({ session, all }) => ({
+            session,
+            events: [],
+            files: [],
+            clips: [...all]
+              .filter(([clip]) => clip.startsWith(`${folder}/`))
+              .map(([clip, clipInfo]) => ({
+                name: clip.slice(clip.lastIndexOf("/") + 1),
+                info: clipInfo,
+                sound: false,
+                segments: null,
+                marks: 0,
+              })),
+          })),
+        ),
       writeOverview: (folder) => Ref.update(overviews, (all) => new Set(all).add(folder)),
     });
   }),

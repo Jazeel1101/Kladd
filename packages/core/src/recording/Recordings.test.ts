@@ -5,6 +5,7 @@ import { LoggingOverlay } from "../logging/LoggingOverlay";
 import type { ScreenCapture } from "../ports/ScreenCapture";
 import {
   AppAdaptersTest,
+  ClipCaptureTest,
   FocusTrackerLog,
   FocusTrackerTest,
   IdsTest,
@@ -17,6 +18,7 @@ import {
   TranscriberLog,
   TranscriberTest,
 } from "../testing";
+import { Clips } from "./Clips";
 import { Recordings } from "./Recordings";
 
 const withCapture = (
@@ -25,10 +27,19 @@ const withCapture = (
   session: ReturnType<typeof SessionCaptureTest> = SessionCaptureTest(),
 ) =>
   Recordings.layer.pipe(
-    Layer.provide([capture, RecordingStoreTest, IdsTest]),
+    Layer.provide([capture, IdsTest]),
     Layer.provide(LoggingOverlay.layer),
+    Layer.provideMerge(Clips.layer),
     Layer.provideMerge(
-      Layer.mergeAll(focus, AppAdaptersTest(), OverlayWindowsTest, session, TranscriberTest()),
+      Layer.mergeAll(
+        focus,
+        AppAdaptersTest(),
+        OverlayWindowsTest,
+        session,
+        TranscriberTest(),
+        ClipCaptureTest,
+        RecordingStoreTest,
+      ),
     ),
   );
 

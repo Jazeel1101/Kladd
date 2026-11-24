@@ -78,7 +78,6 @@ describe("RecordingStoreFile session folder", () => {
         id: "session-1",
         startedAt: "2026-11-24T13:02:00.000Z",
         stoppedAt: null,
-        language: null,
         appVersion: "1.2.3",
         layout: 1,
       });
@@ -97,7 +96,6 @@ describe("RecordingStoreFile session folder", () => {
         t: 0,
         at: "2026-11-24T13:02:00Z",
         accessibility: true,
-        microphone: false,
       };
       const focus: TimelineEvent = {
         type: "focus",
@@ -113,22 +111,55 @@ describe("RecordingStoreFile session folder", () => {
       const input = yield* store.read(folder);
       assert.deepStrictEqual(input.events, [start, focus]);
       assert.deepStrictEqual(input.files, []);
-      assert.deepStrictEqual(input.transcript, []);
+      assert.deepStrictEqual(input.clips, []);
       assert.strictEqual(input.session.id, session.id);
     }).pipe(Effect.provide(inTempDir)),
   );
 
-  it.effect("audio is found only when the microphone recorded it", () =>
-    Effect.gen(function* () {
-      const store = yield* RecordingStore;
-      const fs = yield* FileSystem.FileSystem;
-      const folder = yield* store.save(session);
-      assert.isTrue(Option.isNone(yield* store.audio(folder)));
-      yield* fs.writeFileString(`${folder}/audio.m4a`, "");
-      assert.deepStrictEqual(
-        yield* store.audio(folder),
-        Option.some({ audio: `${folder}/audio.m4a`, transcript: `${folder}/transcript.jsonl` }),
-      );
-    }).pipe(Effect.provide(inTempDir)),
+  it.effect(
+    "clips are numbered in order, and only one with sound and no transcript is untranscribed",
+    () =>
+      Effect.gen(function* () {
+        const store = yield* RecordingStore;
+        const fs = yield* FileSystem.FileSystem;
+        const folder = yield* store.save(session);
+        const startedAt = DateTime.makeUnsafe("2026-11-24T13:05:00Z");
+        const clip = { startedAt, stoppedAt: null, language: null };
+        const first = yield* store.createClip(folder, clip);
+        const second = yield* store.createClip(folder, clip);
+        assert.deepStrictEqual([first, second], [`${folder}/clips/001`, `${folder}/clips/002`]);
+        assert.deepStrictEqual(yield* store.untranscribed(folder), []);
+        yield* fs.writeFileString(`${second}/audio.m4a`, "");
+        assert.deepStrictEqual(yield* store.untranscribed(folder), [
+          {
+            folder: second,
+            audio: `${second}/audio.m4a`,
+            transcript: `${second}/transcript.jsonl`,
+          },
+        ]);
+        assert.deepStrictEqual(yield* store.unfinished, [folder]);
+
+        yield* store.updateClip(second, (info) => ({ ...info, language: "no" }));
+        yield* fs.writeFileString(`${second}/transcript.jsonl`, '{"t":0,"end":1,"text":"hei"}\n');
+        yield* fs.writeFileString(
+          `${second}/marks.jsonl`,
+          '{"t":1,"end":2,"points":[[1,2]]}\n{"t":3',
+        );
+        assert.deepStrictEqual(yield* store.untranscribed(folder), []);
+        const { clips } = yield* store.read(folder);
+        assert.deepStrictEqual(
+          clips.map(({ name, sound, segments, marks, info }) => ({
+            name,
+            sound,
+            segments,
+            marks,
+            language: info.language,
+          })),
+          [
+            { name: "001", sound: false, segments: null, marks: 0, language: null },
+            { name: "002", sound: true, segments: 1, marks: 1, language: "no" },
+          ],
+        );
+      }).pipe(Effect.provide(inTempDir)),
   );
 });

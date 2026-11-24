@@ -1,19 +1,35 @@
-import { DateTime } from "effect";
+import { DateTime, Option } from "effect";
 import {
+  clipFiles,
+  clipsFolder,
   frameName,
   sessionFiles,
+  type ClipInfo,
   type FileChange,
   type SessionInfo,
   type TimelineEvent,
-  type TranscriptSegment,
 } from "./SessionFolder";
+
+/** What the overview says about one clip; never what was said in it. */
+export interface OverviewClip {
+  /** Its folder's name in `clips/`, from clipName. */
+  readonly name: string;
+  readonly info: ClipInfo;
+  /** It has `audio.m4a`. */
+  readonly sound: boolean;
+  /** Lines in its `transcript.jsonl`; null when there is none. */
+  readonly segments: number | null;
+  /** Lines in its `marks.jsonl`. */
+  readonly marks: number;
+}
 
 /** Everything `overview.md` is derived from; all of it can be read back from the session folder. */
 export interface OverviewInput {
   readonly session: SessionInfo;
   readonly events: ReadonlyArray<TimelineEvent>;
   readonly files: ReadonlyArray<FileChange>;
-  readonly transcript: ReadonlyArray<TranscriptSegment>;
+  /** In name order. */
+  readonly clips: ReadonlyArray<OverviewClip>;
 }
 
 /** What was in front from `from` to `to`, or `null` while the student was idle. */
@@ -130,7 +146,6 @@ export const segmentsOf = (events: ReadonlyArray<TimelineEvent>): ReadonlyArray<
 };
 
 /** Caps on what could grow without bound; the full data stays in the files the text names. */
-const maxSpeechChars = 300;
 const maxFramesPerRow = 6;
 const maxFilesPerFolder = 8;
 
@@ -143,10 +158,9 @@ const clock = (seconds: number): string => {
 
 const cell = (text: string): string => text.replace(/\s+/g, " ").replaceAll("|", "\\|").trim();
 
-const cut = (text: string, max: number): string =>
-  text.length <= max ? text : `${text.slice(0, max - 1).trimEnd()}…`;
-
 const dirname = (path: string): string => path.slice(0, Math.max(path.lastIndexOf("/"), 1));
+
+const names = (clips: ReadonlyArray<OverviewClip>): string => clips.map((c) => c.name).join(", ");
 
 /** The text of `overview.md`: the summary agent's map of the session folder. */
 export const renderOverview = (input: OverviewInput): string => {
@@ -155,12 +169,18 @@ export const renderOverview = (input: OverviewInput): string => {
   const stop = events.find((event) => event.type === "stop");
   const segments = segmentsOf(events);
   const duration = stop?.t ?? events.at(-1)?.t ?? 0;
-  const transcript = input.transcript.toSorted((a, b) => a.t - b.t);
+  // The wall clock at t=0; session.json's start is taken a moment before capture begins.
+  const zero = Option.fromNullishOr(start?.at).pipe(
+    Option.flatMap((at) => DateTime.make(at)),
+    Option.getOrElse((): DateTime.DateTime => input.session.startedAt),
+  );
+  const onSessionClock = (at: DateTime.Utc): number =>
+    Math.max(0, Math.floor((DateTime.toEpochMillis(at) - DateTime.toEpochMillis(zero)) / 1000));
 
   const missing: Array<string> = [];
   if (stop === undefined)
     missing.push(
-      `Kladd stopped without a \`stop\` event (a crash): data ends at t=${Math.floor(duration)}, and ${sessionFiles.video} may be cut short.`,
+      `Kladd stopped without a \`stop\` event (a crash): data ends at t=${Math.floor(duration)}.`,
     );
   if (start === undefined)
     missing.push("No `start` event: which permissions were granted is unknown.");
@@ -168,21 +188,21 @@ export const renderOverview = (input: OverviewInput): string => {
     missing.push(
       "No Accessibility permission: `focus` events have app names only (no titles or URLs), keyframes were saved on screen change only, and there is no `focus/` folder.",
     );
-  if (start?.microphone === false)
-    missing.push(`No microphone: no ${sessionFiles.audio} and no speech.`);
-  else if (transcript.length === 0)
-    missing.push(`No transcript: ${sessionFiles.transcript} is missing or empty.`);
-
-  const speechIn = (segment: Segment, last: boolean): string =>
-    cut(
-      transcript
-        .filter((s) => s.t >= segment.from && (s.t < segment.to || (last && s.t <= segment.to)))
-        .map((s) => s.text.trim())
-        .join(" "),
-      maxSpeechChars,
+  const silent = input.clips.filter((clip) => !clip.sound);
+  if (silent.length > 0)
+    missing.push(
+      `No sound in clip ${names(silent)}: no microphone permission, so no ${clipFiles.audio} or ${clipFiles.transcript}.`,
     );
+  const untranscribed = input.clips.filter((clip) => clip.sound && clip.segments === null);
+  if (untranscribed.length > 0)
+    missing.push(
+      `No ${clipFiles.transcript} yet in clip ${names(untranscribed)}: transcription failed or has not run.`,
+    );
+  const cutShort = input.clips.filter((clip) => clip.info.stoppedAt === null);
+  if (cutShort.length > 0)
+    missing.push(`No stop time for clip ${names(cutShort)} (a crash): its files may be cut short.`);
 
-  const rows = segments.map((segment, index) => {
+  const rows = segments.map((segment) => {
     const [app, title] = segment.idle
       ? ["*idle*", ""]
       : segment.focus === null
@@ -194,8 +214,15 @@ export const renderOverview = (input: OverviewInput): string => {
     const shown = segment.frames.slice(0, maxFramesPerRow).map(frameName).join(" ");
     const more = segment.frames.length - maxFramesPerRow;
     const frames = more > 0 ? `${shown} +${more}` : shown;
-    const speech = speechIn(segment, index === segments.length - 1);
-    return `| ${Math.floor(segment.from)}–${Math.floor(segment.to)} | ${cell(app)} | ${cell(title)} | ${frames} | ${cell(speech)} |`;
+    return `| ${Math.floor(segment.from)}–${Math.floor(segment.to)} | ${cell(app)} | ${cell(title)} | ${frames} |`;
+  });
+
+  const clipRows = input.clips.map((clip) => {
+    const from = onSessionClock(clip.info.startedAt);
+    const to = clip.info.stoppedAt === null ? "?" : onSessionClock(clip.info.stoppedAt);
+    const transcript =
+      clip.segments === null ? "no" : clip.segments === 0 ? "empty" : `${clip.segments} lines`;
+    return `| ${clip.name} | ${from}–${to} | ${clipsFolder}/${clip.name}/ | ${clip.sound ? "yes" : "no"} | ${transcript} | ${clip.marks} |`;
   });
 
   const byFolder = Map.groupBy(
@@ -210,29 +237,44 @@ export const renderOverview = (input: OverviewInput): string => {
     return [`${folder}/`, ...listed, ...(more > 0 ? [`- +${more} more`] : [])].join("\n");
   });
 
-  const language = input.session.language ?? "unknown";
   const f = sessionFiles;
+  const c = clipFiles;
   return [
     "# Session overview",
     "",
-    `Started ${DateTime.formatIso(input.session.startedAt)}. Duration ${clock(duration)} (t=0–${Math.floor(duration)}). Spoken language: ${language}.`,
+    `Started ${DateTime.formatIso(input.session.startedAt)}. Duration ${clock(duration)} (t=0–${Math.floor(duration)}). Clips: ${input.clips.length}.`,
     "",
     ...(missing.length > 0 ? ["Missing data:", ...missing.map((line) => `- ${line}`), ""] : []),
     "## How to read this folder",
     "",
-    "- One clock: `t` is seconds since the recording started, in every file and file name.",
+    "- One clock: `t` is seconds since the session started, in every file and file name outside `clips/`.",
     `- \`${f.timeline}\`: every event, one JSON object per line, with \`type\` start, stop, focus, frame, idle, active or activity (key and click counts every 10 s, never what was typed). Lines can be out of \`t\` order; sort by \`t\`.`,
     `- \`${f.frames}/<t>.jpg\`: keyframes (6-digit \`t\`, e.g. ${frameName(65)}.jpg is t=65); \`${f.frames}/<t>.txt\` is its OCR text, missing when OCR failed. \`${f.focus}/<t>.json\`: the focused window at that keyframe.`,
-    `- \`${f.transcript}\`: speech, \`{t, end, text}\` per line. \`${f.files}\`: changed files, \`{t, path}\` per line. \`${f.session}\`: start, stop, language. \`${f.video}\`: the whole screen.`,
+    `- \`${f.files}\`: changed files, \`{t, path}\` per line. \`${f.session}\`: start and stop time.`,
     `- Use \`jq\` and \`grep\` on the \`.jsonl\` files, e.g. \`jq -c 'select(.type=="focus")' ${f.timeline}\`. There is no Python.`,
     "",
     "## Segments",
     "",
-    `One row per stretch in one app and title, or per idle period (no input for 60 s or more). Stretches under ${flickerSeconds} s are merged into the next row; see \`${f.timeline}\` for every switch. Keyframes are \`${f.frames}/<name>.jpg\`, at most ${maxFramesPerRow} listed per row; speech is cut at ${maxSpeechChars} characters (full text in \`${f.transcript}\`).`,
+    `One row per stretch in one app and title, or per idle period (no input for 60 s or more). Stretches under ${flickerSeconds} s are merged into the next row; see \`${f.timeline}\` for every switch. Keyframes are \`${f.frames}/<name>.jpg\`, at most ${maxFramesPerRow} listed per row.`,
     "",
-    "| t | App | Title / URL | Keyframes | Speech |",
-    "| --- | --- | --- | --- | --- |",
+    "| t | App | Title / URL | Keyframes |",
+    "| --- | --- | --- | --- |",
     ...rows,
+    "",
+    "## Clips",
+    "",
+    ...(input.clips.length === 0
+      ? ["None."]
+      : [
+          "A clip is a whole-screen video with sound that the student took to show and explain something. What was said is not in this overview; read each clip's transcript.",
+          "",
+          `- \`${clipsFolder}/<name>/\`: \`${c.video}\` the whole screen with the student's red strokes drawn in, \`${c.audio}\` the microphone, \`${c.transcript}\` what was said as \`{t, end, text}\` per line, \`${c.marks}\` the strokes as \`{t, end, points}\` per line (\`[x, y]\` points on the main display from its top-left corner), \`${c.clip}\` start, stop and spoken language.`,
+          "- Times inside a clip's files are seconds since that clip started. Add the clip's start below to get session `t`.",
+          "",
+          "| Clip | t | Folder | Sound | Transcript | Marks |",
+          "| --- | --- | --- | --- | --- | --- |",
+          ...clipRows,
+        ]),
     "",
     "## Files changed",
     "",
