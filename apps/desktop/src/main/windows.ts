@@ -64,8 +64,15 @@ function centred(size: Size, area: Rect) {
   };
 }
 
+// By centre point, not overlap: a caret is 0 wide, and getDisplayMatching gives a rect with no area
+// the key window's display, which may not be the caret's.
 const workArea = (near: Rect | null): Rect =>
-  near === null ? screen.getPrimaryDisplay().workArea : screen.getDisplayMatching(near).workArea;
+  near === null
+    ? screen.getPrimaryDisplay().workArea
+    : screen.getDisplayNearestPoint({
+        x: Math.round(near.x + near.width / 2),
+        y: Math.round(near.y + near.height / 2),
+      }).workArea;
 
 const overlayOptions = {
   frame: false,
