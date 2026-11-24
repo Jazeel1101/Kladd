@@ -1,6 +1,6 @@
 import { assert, describe, it } from "@effect/vitest";
 import { FocusTrackingFailed, emptyFocus, makeAppAdapter, type FocusSnapshot } from "@kladd/domain";
-import { Deferred, Effect, Fiber, Layer, Ref, Stream } from "effect";
+import { Deferred, Effect, Fiber, Layer, Queue, Ref, Stream } from "effect";
 import {
   AppAdaptersTest,
   FocusTrackerTest,
@@ -26,10 +26,13 @@ const notesWithPage = makeAppAdapter({
 const provide = (
   focus: FocusSnapshot | FocusTrackingFailed | Effect.Effect<FocusSnapshot>,
   adapters = AppAdaptersTest(),
+  changes?: Stream.Stream<FocusSnapshot, FocusTrackingFailed>,
 ) =>
   Effect.provide(
     LoggingOverlay.layer.pipe(
-      Layer.provideMerge(Layer.mergeAll(FocusTrackerTest(focus), adapters, OverlayWindowsTest)),
+      Layer.provideMerge(
+        Layer.mergeAll(FocusTrackerTest(focus, undefined, changes), adapters, OverlayWindowsTest),
+      ),
     ),
   );
 
@@ -140,4 +143,79 @@ describe("LoggingOverlay.open", () => {
       );
     }),
   );
+
+  describe("while open", () => {
+    const app = { bundleId: "com.apple.Notes", name: "Notes" };
+    const window = { x: 400, y: 50, width: 600, height: 600 };
+    const page = (title: string): FocusSnapshot => ({ ...emptyFocus, app, window, title });
+    const other = { ...emptyFocus, app: { bundleId: "com.apple.Safari", name: "Safari" } };
+    const adapters = AppAdaptersTest([notesWithPage]);
+
+    /** Opens the overlay with `changes` as the focus watch; returns the targets the UI is told. */
+    const follow = (
+      changes: Queue.Queue<FocusSnapshot>,
+      steps: Effect.Effect<void, never, LoggingOverlay>,
+    ) =>
+      Effect.gen(function* () {
+        const overlay = yield* LoggingOverlay;
+        const seen = yield* Ref.make<ReadonlyArray<string | null>>([]);
+        yield* overlay.changes.pipe(
+          Stream.runForEach((info) =>
+            Ref.update(seen, (all) => [...all, info?.target.document ?? null]),
+          ),
+          Effect.forkChild,
+        );
+        yield* Effect.yieldNow;
+        yield* overlay.open;
+        yield* steps;
+        return yield* Ref.get(seen);
+      }).pipe(provide(page("Uke 1 – Notes"), adapters, Stream.fromQueue(changes)));
+
+    it.effect("follows the page the user switches to, without moving", () =>
+      Effect.gen(function* () {
+        const changes = yield* Queue.unbounded<FocusSnapshot>();
+        const seen = yield* follow(
+          changes,
+          Effect.gen(function* () {
+            yield* Queue.offerAll(changes, [page("Uke 1 – Notes"), page("Uke 2 – Notes")]);
+            yield* Effect.yieldNow;
+            yield* Effect.yieldNow;
+          }),
+        );
+        assert.deepStrictEqual(seen, [null, "Uke 1", "Uke 2"]);
+      }),
+    );
+
+    it.effect("ignores other apps", () =>
+      Effect.gen(function* () {
+        const changes = yield* Queue.unbounded<FocusSnapshot>();
+        const seen = yield* follow(
+          changes,
+          Effect.gen(function* () {
+            yield* Queue.offer(changes, other);
+            yield* Effect.yieldNow;
+            yield* Effect.yieldNow;
+          }),
+        );
+        assert.deepStrictEqual(seen, [null, "Uke 1"]);
+      }),
+    );
+
+    it.effect("stops following when closed", () =>
+      Effect.gen(function* () {
+        const changes = yield* Queue.unbounded<FocusSnapshot>();
+        const seen = yield* follow(
+          changes,
+          Effect.gen(function* () {
+            const overlay = yield* LoggingOverlay;
+            yield* overlay.close;
+            yield* Queue.offer(changes, page("Uke 2 – Notes"));
+            yield* Effect.yieldNow;
+            yield* Effect.yieldNow;
+          }),
+        );
+        assert.deepStrictEqual(seen, [null, "Uke 1"]);
+      }),
+    );
+  });
 });

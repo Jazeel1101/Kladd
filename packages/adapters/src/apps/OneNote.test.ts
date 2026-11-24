@@ -27,8 +27,31 @@ describe("OneNote", () => {
     assert.isAbove(bounds.x, snapshot.element!.x, "the overlay must not cover the page list");
   });
 
-  it("falls back to the window when no element is focused", () => {
-    assert.deepStrictEqual(OneNote.anchor({ ...snapshot, element: null }), snapshot.window);
+  it("uses the same corner when the section list is focused instead of the page", () => {
+    // A real snapshot right after clicking a section.
+    const sectionList = { x: 131, y: 225, width: 215, height: 667 };
+    const anchor = OneNote.anchor({ ...snapshot, element: sectionList });
+    assert.deepStrictEqual(placeInside(anchor!, overlay, screen), {
+      x: 1062,
+      y: 189,
+      width: 360,
+      height: 480,
+    });
+  });
+
+  it("falls back to the window below the ribbon when no element is focused", () => {
+    assert.deepStrictEqual(OneNote.anchor({ ...snapshot, element: null }), {
+      x: 84,
+      y: 181,
+      width: 1346,
+      height: 755,
+    });
+    assert.deepStrictEqual(OneNote.anchor({ ...emptyFocus, element: snapshot.element }), {
+      x: 478,
+      y: 181,
+      width: 952,
+      height: 755,
+    });
     assert.isNull(OneNote.anchor(emptyFocus));
   });
 

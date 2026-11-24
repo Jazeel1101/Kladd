@@ -2,8 +2,7 @@ import { useAtomSet, useAtomValue } from "@effect/atom-react";
 import { Button } from "@ui-sdk/react/button";
 import type { LoggingOverlayInfo } from "@kladd/domain";
 import { AsyncResult } from "effect/reactivity";
-import { hideWindowAtom } from "../windows/atoms";
-import { loggingOverlayAtom } from "./atoms";
+import { closeLoggingOverlayAtom, loggingOverlayAtom } from "./atoms";
 
 /** Where the user writes, as the app adapter reported it: "OneNote · Uke 3". */
 const WritingTarget = ({ info }: { info: LoggingOverlayInfo }) => {
@@ -26,7 +25,7 @@ const WritingTarget = ({ info }: { info: LoggingOverlayInfo }) => {
  * The composer goes here; its design is not decided yet.
  */
 export const LoggingOverlay = () => {
-  const hideWindow = useAtomSet(hideWindowAtom);
+  const close = useAtomSet(closeLoggingOverlayAtom);
   const opened = useAtomValue(loggingOverlayAtom);
   const info = AsyncResult.isSuccess(opened) ? opened.value : null;
   return (
@@ -36,7 +35,7 @@ export const LoggingOverlay = () => {
         <Button
           aria-label="Close"
           className="border-0 bg-transparent text-neutral-500"
-          onClick={() => hideWindow({ payload: { kind: "logging" } })}
+          onClick={() => close({ payload: undefined })}
         >
           ✕
         </Button>

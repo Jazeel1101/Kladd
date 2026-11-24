@@ -17,6 +17,7 @@ export const RpcHandlersLive = KladdRpcs.toLayer(
     return {
       WatchRecording: () => Stream.map(recordings.changes, Option.getOrNull),
       WatchLoggingOverlay: () => logging.changes,
+      CloseLoggingOverlay: () => logging.close,
       WatchScreenshots: () => screenshots.changes,
       LandScreenshot: ({ id }) => screenshots.land(id),
       SetScreenshotSlot: ({ slot }) => screenshots.aimAt(slot),

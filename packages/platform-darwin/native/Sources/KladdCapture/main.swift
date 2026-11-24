@@ -10,6 +10,8 @@
 //   kladd-capture accessibility-status                    Accessibility: prints "granted" or "denied"
 //   kladd-capture accessibility-request --app <Kladd.app> [--timeout s]
 //   kladd-capture focus [--exclude-pid pid]               prints a FocusSnapshot as JSON (Focus.swift)
+//   kladd-capture watch-focus [--exclude-pid pid]
+//       prints a FocusSnapshot line now and on each change in that app; ends when it quits or stdin closes.
 //
 // Exit codes: 0 done, 77 permission denied (also prints "denied"), 64 bad usage, 1 anything else.
 
@@ -277,6 +279,8 @@ Task { @MainActor in
   case "focus":
     printFocus(excludePid: option("--exclude-pid", in: args).flatMap { pid_t($0) })
     exit(0)
+  case "watch-focus":
+    watchFocus(excludePid: option("--exclude-pid", in: args).flatMap { pid_t($0) })
   case "screenshot":
     await runScreenshot(args)
   case "record":
@@ -284,7 +288,8 @@ Task { @MainActor in
   default:
     fail(
       "usage: kladd-capture status | request --app <path> | screenshot --out <file> | record --out <file>"
-        + " | accessibility-status | accessibility-request --app <path> | focus [--exclude-pid pid]",
+        + " | accessibility-status | accessibility-request --app <path> | focus [--exclude-pid pid]"
+        + " | watch-focus [--exclude-pid pid]",
       code: exitUsage)
   }
 }

@@ -132,14 +132,14 @@ func userApp(excludePid: pid_t?) -> NSRunningApplication? {
   return nil
 }
 
-func focusSnapshot(excludePid: pid_t?) -> [String: Any] {
+/// What `front` shows at this moment: its focused window, element, caret and list selection.
+func focusSnapshot(of front: NSRunningApplication?) -> [String: Any] {
   var snapshot: [String: Any] = [
     "app": NSNull(), "window": NSNull(), "title": NSNull(), "element": NSNull(), "caret": NSNull(),
     "selection": [],
   ]
   // An app's focused window and element stay readable over AX while it is in the background.
-  guard let front = userApp(excludePid: excludePid), let bundleId = front.bundleIdentifier
-  else { return snapshot }
+  guard let front, let bundleId = front.bundleIdentifier else { return snapshot }
   snapshot["app"] = ["bundleId": bundleId, "name": front.localizedName ?? bundleId]
   guard AXIsProcessTrusted() else { return snapshot }
 
@@ -158,11 +158,76 @@ func focusSnapshot(excludePid: pid_t?) -> [String: Any] {
   return snapshot
 }
 
-func printFocus(excludePid: pid_t?) {
+/// One JSON line. Sorted keys, so equal snapshots print equal lines.
+func focusLine(_ snapshot: [String: Any]) -> String {
   do {
-    let data = try JSONSerialization.data(withJSONObject: focusSnapshot(excludePid: excludePid))
-    say(String(decoding: data, as: UTF8.self))
+    let data = try JSONSerialization.data(withJSONObject: snapshot, options: [.sortedKeys])
+    return String(decoding: data, as: UTF8.self)
   } catch {
     fail("cannot encode focus: \(error)")
+  }
+}
+
+func printFocus(excludePid: pid_t?) {
+  say(focusLine(focusSnapshot(of: userApp(excludePid: excludePid))))
+}
+
+// MARK: - Watching
+
+/// What changes the snapshot: another page or section (selected rows), window, title or focused element.
+let watchedNotifications = [
+  kAXSelectedRowsChangedNotification, kAXFocusedWindowChangedNotification,
+  kAXTitleChangedNotification, kAXFocusedUIElementChangedNotification,
+]
+/// One change fires a burst of notifications (OneNote: about ten within 50 ms); print once after it.
+let watchDebounce: TimeInterval = 0.15
+
+/// Runs on the main queue after a burst of notifications. AXObserver callbacks are C functions, so
+/// they can't capture it.
+nonisolated(unsafe) var onFocusNotification: () -> Void = {}
+/// Kept for the life of the process: a released observer stops calling back without any error.
+nonisolated(unsafe) var focusObserver: AXObserver?
+
+/// `kladd-capture watch-focus`: the app the user is in, as `focus` prints it, then a new line each
+/// time that app's snapshot changes. It keeps following that app, not whichever is in front. Ends when
+/// the app quits or stdin closes (Kladd went away).
+@MainActor func watchFocus(excludePid: pid_t?) {
+  let front = userApp(excludePid: excludePid)
+  var last = focusLine(focusSnapshot(of: front))
+  say(last)
+  guard let front, AXIsProcessTrusted() else { exit(0) }
+
+  var pending: DispatchWorkItem?
+  onFocusNotification = {
+    pending?.cancel()
+    let work = DispatchWorkItem {
+      let line = focusLine(focusSnapshot(of: front))
+      if line != last {
+        last = line
+        say(line)
+      }
+    }
+    pending = work
+    DispatchQueue.main.asyncAfter(deadline: .now() + watchDebounce, execute: work)
+  }
+
+  guard
+    AXObserverCreate(front.processIdentifier, { _, _, _, _ in onFocusNotification() }, &focusObserver)
+      == .success,
+    let observer = focusObserver
+  else { fail("cannot observe \(front.bundleIdentifier ?? "the app")") }
+  let app = AXUIElementCreateApplication(front.processIdentifier)
+  for name in watchedNotifications { AXObserverAddNotification(observer, app, name as CFString, nil) }
+  CFRunLoopAddSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(observer), .defaultMode)
+
+  NSWorkspace.shared.notificationCenter.addObserver(
+    forName: NSWorkspace.didTerminateApplicationNotification, object: nil, queue: .main
+  ) { note in
+    let quit = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
+    if quit?.processIdentifier == front.processIdentifier { exit(0) }
+  }
+  Thread.detachNewThread {
+    while readLine() != nil {}
+    exit(0)
   }
 }

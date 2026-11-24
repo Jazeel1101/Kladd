@@ -1,7 +1,7 @@
 import { FocusTracker } from "@kladd/core";
 import { type AccessibilityPermission, FocusSnapshot, FocusTrackingFailed } from "@kladd/domain";
-import { Effect, Layer, Schema } from "effect";
-import { ChildProcessSpawner } from "effect/process";
+import { Effect, Layer, Schema, Stream } from "effect";
+import { ChildProcess, ChildProcessSpawner } from "effect/process";
 import {
   type CaptureHelper,
   describeFailure,
@@ -46,6 +46,38 @@ export const FocusTrackerDarwin = (helper: CaptureHelper) =>
         Effect.withSpan("FocusTrackerDarwin.current"),
       );
 
+      // One long-running helper per watch: it prints a line per change and exits when its stdin
+      // closes, which happens when the stream is interrupted or Kladd goes away.
+      const watch = Stream.unwrap(
+        Effect.gen(function* () {
+          const handle = yield* spawner
+            .spawn(
+              ChildProcess.make(helper.path, [
+                "watch-focus",
+                "--exclude-pid",
+                String(helper.excludePid),
+              ]),
+            )
+            .pipe(Effect.mapError(failed));
+          const snapshots = handle.stdout.pipe(
+            Stream.decodeText(),
+            Stream.splitLines,
+            Stream.mapEffect((line) => decodeFocus(line)),
+            Stream.mapError(failed),
+          );
+          const exited = Stream.fromEffect(handle.exitCode.pipe(Effect.mapError(failed))).pipe(
+            Stream.flatMap((code) =>
+              Number(code) === 0
+                ? Stream.empty
+                : Stream.fail(
+                    new FocusTrackingFailed({ reason: `watch-focus exited with ${code}` }),
+                  ),
+            ),
+          );
+          return Stream.concat(snapshots, exited);
+        }),
+      ).pipe(Stream.withSpan("FocusTrackerDarwin.watch"));
+
       const permission = run(["accessibility-status"]).pipe(
         Effect.flatMap(readPermission),
         Effect.withSpan("FocusTrackerDarwin.permission"),
@@ -58,6 +90,6 @@ export const FocusTrackerDarwin = (helper: CaptureHelper) =>
         Effect.withSpan("FocusTrackerDarwin.requestPermission"),
       );
 
-      return FocusTracker.of({ current, permission, requestPermission });
+      return FocusTracker.of({ current, watch, permission, requestPermission });
     }),
   );
