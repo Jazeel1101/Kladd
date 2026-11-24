@@ -35,8 +35,12 @@ let videoBitrate = 1_000_000
 let audioBitrate = 64_000
 /// Fragments make screen.mp4 and audio.m4a playable after a crash, up to the last fragment.
 let fragmentInterval = CMTime(seconds: 10, preferredTimescale: 600)
-/// How long stop waits for OCR still running; frames still waiting get `ocr: null`.
+/// How long stop waits for OCR still running; a frame whose OCR has not finished has no text file.
 let ocrStopWait: TimeInterval = 10
+
+/// fseventsd hands a change to the watcher up to about a second after it happened, and
+/// FSEventStreamFlushSync does not hurry it, so stop keeps watching this long.
+let fileEventsGrace: TimeInterval = 1.5
 
 func hostNow() -> CMTime { CMClockGetTime(CMClockGetHostTimeClock()) }
 
@@ -134,6 +138,9 @@ final class SessionVideo: NSObject, SCStreamDelegate, SCStreamOutput {
   private var writer: AVAssetWriter?
   private var input: AVAssetWriterInput?
   private var lastTime = CMTime.invalid
+  /// Frames taken before this host time are not written: infinite from when an excluded app
+  /// launches until the stream has accepted a filter without it.
+  private var writeFrom = CMTime.zero
   /// Shown again at stop: ScreenCaptureKit sends no frames while the screen is still.
   private var lastFrame: CMSampleBuffer?
   private var finished = false
@@ -166,16 +173,22 @@ final class SessionVideo: NSObject, SCStreamDelegate, SCStreamOutput {
     guard type == .screen, !finished, sampleBuffer.isValid,
       let attachments = CMSampleBufferGetSampleAttachmentsArray(sampleBuffer, createIfNecessary: false)
         as? [[SCStreamFrameInfo: Any]],
-      let raw = attachments.first?[.status] as? Int, SCFrameStatus(rawValue: raw) == .complete,
-      let pixels = sampleBuffer.imageBuffer
+      let raw = attachments.first?[.status] as? Int, SCFrameStatus(rawValue: raw) == .complete
     else { return }
+    append(sampleBuffer)
+  }
+
+  /// Writes one complete frame. Runs on the video queue.
+  func append(_ sampleBuffer: CMSampleBuffer) {
     let time = sampleBuffer.presentationTimeStamp
+    guard !finished, let pixels = sampleBuffer.imageBuffer, time >= writeFrom else { return }
     if writer == nil {
       guard startWriter(width: CVPixelBufferGetWidth(pixels), height: CVPixelBufferGetHeight(pixels), at: time)
       else { return }
       onFirstFrame(time)
     }
-    guard let input, input.isReadyForMoreMediaData, time > lastTime else { return }
+    // An invalid CMTime compares greater than every valid one, so the first frame needs its own case.
+    guard let input, input.isReadyForMoreMediaData, !lastTime.isValid || time > lastTime else { return }
     if input.append(sampleBuffer) {
       lastTime = time
       lastFrame = sampleBuffer
@@ -227,15 +240,27 @@ final class SessionVideo: NSObject, SCStreamDelegate, SCStreamOutput {
       }
       self.lastFrame = nil
       self.input?.markAsFinished()
-      writer.endSession(atSourceTime: self.lastTime)
+      // Ending at an invalid time (no frame was written) raises and aborts the helper.
+      if self.lastTime.isValid { writer.endSession(atSourceTime: self.lastTime) }
       writer.finishWriting { done(writer.status == .completed ? nil : writer.error) }
     }
   }
 
-  func update(_ filter: SCContentFilter) {
+  /// Calls `accepted` on the main queue once the stream uses `filter`.
+  func update(_ filter: SCContentFilter, accepted: @escaping () -> Void) {
     stream?.updateContentFilter(filter) { error in
-      if let error { logError("cannot update the video filter: \(error)") }
+      if let error { return logError("cannot update the video filter: \(error)") }
+      DispatchQueue.main.async(execute: accepted)
     }
+  }
+
+  /// Stops writing frames, from now on, until `release`.
+  func hold() { queue.sync { writeFrom = .positiveInfinity } }
+
+  /// Writes frames again, from those taken now on.
+  func release() {
+    let now = hostNow()
+    queue.async { self.writeFrom = now }
   }
 
   func stream(_ stream: SCStream, didStopWithError error: Error) {
@@ -404,7 +429,15 @@ final class FileWatcher {
     changed(path)
   }
 
-  func stop() {
+  /// Stops after `fileEventsGrace`, so changes made just before still arrive, then calls `done`.
+  func stop(done: @escaping () -> Void) {
+    DispatchQueue.main.asyncAfter(deadline: .now() + fileEventsGrace) {
+      self.stopNow()
+      done()
+    }
+  }
+
+  private func stopNow() {
     guard let stream else { return }
     FSEventStreamStop(stream)
     FSEventStreamInvalidate(stream)
@@ -437,10 +470,14 @@ final class Session: @unchecked Sendable {
   var filter: SCContentFilter?
   /// The pids the filter leaves out, to tell when an excluded app starts or quits.
   var filteredPids = Set<pid_t>()
+  /// An excluded app launched and the stream may still show it: no video frames or keyframes.
+  var filterPending = false
   var watcher: FileWatcher?
   var timer: Timer?
 
   var start: CMTime?
+  /// When `stop` was written: files that arrive during `fileEventsGrace` get this `t`.
+  var end: CMTime?
   var stopRequested = false
   var stopping = false
 
@@ -456,9 +493,6 @@ final class Session: @unchecked Sendable {
 
   let ocrQueue = DispatchQueue(label: "kladd.session.ocr", qos: .utility)
   let ocrJobs = DispatchGroup()
-  /// Frames whose `frame` event waits for OCR, by file name. Guarded by `pendingLock`.
-  var pendingFrames: [String: [String: Any]] = [:]
-  let pendingLock = NSLock()
 
   init(dir: URL, excludePid: pid_t?, excludedApps: Set<String>) {
     self.dir = dir
@@ -516,13 +550,15 @@ final class Session: @unchecked Sendable {
     clicks = clickCount()
     watcher = FileWatcher(root: NSHomeDirectory(), denied: deniedPaths) { [weak self] path in
       guard let self else { return }
-      self.files.write(["t": seconds(self.t()), "path": path])
+      self.files.write(["t": seconds(self.t(min(hostNow(), self.end ?? .positiveInfinity))), "path": path])
     }
     NSWorkspace.shared.notificationCenter.addObserver(
       forName: NSWorkspace.didLaunchApplicationNotification, object: nil, queue: .main
     ) { [weak self] note in
       let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
       guard let self, let id = app?.bundleIdentifier, self.excludedApps.contains(id) else { return }
+      self.filterPending = true
+      self.video.hold()
       // Its first window can take a moment to be listed.
       for delay in [0.2, 1, 3] { DispatchQueue.main.asyncAfter(deadline: .now() + delay) { self.refreshFilter() } }
     }
@@ -538,8 +574,8 @@ final class Session: @unchecked Sendable {
     stopping = true
     timer?.invalidate()
     focusFrame?.cancel()
-    watcher?.stop()
     let end = hostNow()
+    self.end = end
     timeline.write(["type": "stop", "t": seconds(t(end)), "at": Session.iso(Date())])
 
     let done = DispatchGroup()
@@ -553,14 +589,13 @@ final class Session: @unchecked Sendable {
       done.enter()
       audio.finish { done.leave() }
     }
+    if let watcher {
+      done.enter()
+      watcher.stop { done.leave() }
+    }
     done.enter()
     DispatchQueue.global().async {
       _ = self.ocrJobs.wait(timeout: .now() + ocrStopWait)
-      self.pendingLock.lock()
-      let waiting = self.pendingFrames
-      self.pendingFrames = [:]
-      self.pendingLock.unlock()
-      for event in waiting.values { self.timeline.write(event) }
       done.leave()
     }
     done.notify(queue: .main) {
@@ -597,8 +632,19 @@ final class Session: @unchecked Sendable {
       guard !stopping, let (filter, display) = try? await currentFilter() else { return }
       self.filter = filter
       self.display = display
-      video.update(filter)
+      let covering = coversExcludedApps()
+      video.update(filter) { self.accepted(covering: covering) }
     }
+  }
+
+  /// Whether the filter just built leaves out every excluded app that is running.
+  func coversExcludedApps() -> Bool { runningExcludedPids().isSubset(of: filteredPids) }
+
+  /// The stream uses a new filter: video and keyframes go on once it leaves out every excluded app.
+  func accepted(covering: Bool) {
+    guard filterPending, covering else { return }
+    filterPending = false
+    video.release()
   }
 
   /// The video keeps going: a stream that stops on its own is started again into the same file.
@@ -609,7 +655,9 @@ final class Session: @unchecked Sendable {
         let (filter, display) = try await currentFilter()
         self.filter = filter
         self.display = display
+        let covering = coversExcludedApps()
         try await video.start(filter: filter, display: display)
+        accepted(covering: covering)
       } catch {
         logError("cannot restart video: \(error)")
         DispatchQueue.main.asyncAfter(deadline: .now() + 5) { self.restartVideo() }
@@ -689,7 +737,7 @@ final class Session: @unchecked Sendable {
   }
 
   func checkScreenChange() {
-    guard !idle, !capturingFrame, t() - lastFrameT >= changeFrameGap else { return }
+    guard !idle, !capturingFrame, !filterPending, t() - lastFrameT >= changeFrameGap else { return }
     Task { @MainActor in
       guard let image = await screenshot(width: thumbWidth, height: thumbHeight), let thumb = grayscale(image)
       else { return }
@@ -698,50 +746,46 @@ final class Session: @unchecked Sendable {
     }
   }
 
-  /// A full-resolution keyframe, its focus snapshot, and OCR after it. No keyframe while idle, in a
-  /// password field or in an excluded app, or when one already has this second's name.
+  /// Whether a keyframe now could show what Kladd leaves out: an excluded app not yet filtered
+  /// out, a password field, or an excluded app in front.
+  func privateOnScreen() -> Bool {
+    if filterPending { return true }
+    guard let front = userApp(excludePid: excludePid) else { return false }
+    return excludedApps.contains(front.bundleIdentifier ?? "") || secureFieldFocused(front)
+  }
+
+  /// A full-resolution keyframe, its focus snapshot, and OCR after it. No keyframe while idle or
+  /// `privateOnScreen`, or when one already has this second's name. The `frame` event is written
+  /// with the JPEG, so a crash during OCR (which can take minutes) still leaves it on the timeline.
   func saveKeyframe(reason: String) {
-    guard !stopping, !idle, !capturingFrame else { return }
-    let front = userApp(excludePid: excludePid)
-    if let front {
-      if excludedApps.contains(front.bundleIdentifier ?? "") || secureFieldFocused(front) { return }
-    }
+    guard !stopping, !idle, !capturingFrame, !privateOnScreen() else { return }
     let now = t()
     let name = String(format: "%06d", Int(now.rounded(.down)))
     let file = "frames/\(name).jpg"
     let url = dir.appendingPathComponent(file)
     guard !FileManager.default.fileExists(atPath: url.path) else { return }
     capturingFrame = true
-    let focus = focusSnapshot(of: front)
+    let focus = focusSnapshot(of: userApp(excludePid: excludePid))
     Task { @MainActor in
       defer { capturingFrame = false }
-      guard let image = await screenshot(), writeJPEG(image, to: url) else { return logError("cannot save \(file)") }
+      guard let image = await screenshot() else { return logError("cannot save \(file)") }
+      // Focus can move into a password field or an excluded app while the screenshot is taken.
+      guard !stopping, !privateOnScreen() else { return }
+      guard writeJPEG(image, to: url) else { return logError("cannot save \(file)") }
       lastFrameT = now
       lastThumb = grayscale(image)
       if let data = try? JSONSerialization.data(withJSONObject: focus, options: jsonOptions) {
         try? data.write(to: dir.appendingPathComponent("focus/\(name).json"))
       }
-      recognize(image, file: file, name: name, event: ["type": "frame", "t": seconds(now), "file": file, "reason": reason])
-    }
-  }
-
-  /// The `frame` event is written once OCR is done, or at stop with `ocr: null`.
-  func recognize(_ image: CGImage, file: String, name: String, event: [String: Any]) {
-    pendingLock.lock()
-    pendingFrames[file] = event.merging(["ocr": NSNull()]) { $1 }
-    pendingLock.unlock()
-    ocrJobs.enter()
-    ocrQueue.async {
-      defer { self.ocrJobs.leave() }
-      var ocr: Any = NSNull()
-      if let text = recognizeText(image) {
-        let txt = "frames/\(name).txt"
-        if (try? Data(text.utf8).write(to: self.dir.appendingPathComponent(txt))) != nil { ocr = txt }
+      let txt = "frames/\(name).txt"
+      timeline.write(["type": "frame", "t": seconds(now), "file": file, "reason": reason, "ocr": txt])
+      ocrJobs.enter()
+      ocrQueue.async {
+        defer { self.ocrJobs.leave() }
+        // Atomic: a text file that exists is complete.
+        guard let text = recognizeText(image) else { return }
+        try? Data(text.utf8).write(to: self.dir.appendingPathComponent(txt), options: .atomic)
       }
-      self.pendingLock.lock()
-      let waiting = self.pendingFrames.removeValue(forKey: file) != nil
-      self.pendingLock.unlock()
-      if waiting { self.timeline.write(event.merging(["ocr": ocr]) { $1 }) }
     }
   }
 }

@@ -56,7 +56,10 @@ export const TimelineEvent = Schema.Union([
     title: Schema.NullOr(Schema.String),
     url: Schema.optional(Schema.String),
   }),
-  /** A keyframe was saved (GLOSSARY: "nøkkelbilde"). `file` and `ocr` are relative to the folder. */
+  /**
+   * A keyframe was saved (GLOSSARY: "nøkkelbilde"). `file` and `ocr` are relative to the folder.
+   * `ocr` is where its OCR text goes; that file is missing when OCR failed or had not finished.
+   */
   Schema.Struct({
     type: Schema.Literal("frame"),
     t,

@@ -27,6 +27,12 @@ let package = Package(
       swiftSettings: [.swiftLanguageMode(.v5)]
         + (withPermissionFlow ? [.define("KLADD_PERMISSIONFLOW")] : [])
     ),
+    .testTarget(
+      name: "KladdCaptureTests",
+      dependencies: ["kladd-capture"],
+      path: "Tests/KladdCaptureTests",
+      swiftSettings: [.swiftLanguageMode(.v5)]
+    ),
     .executableTarget(
       name: "kladd-transcribe",
       dependencies: [.product(name: "WhisperKit", package: "WhisperKit")],
