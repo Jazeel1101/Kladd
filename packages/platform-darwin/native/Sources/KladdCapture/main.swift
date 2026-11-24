@@ -7,6 +7,8 @@
 //   kladd-capture screenshot --out <file.png> [--exclude-pid pid]
 //   kladd-capture record --out <file.mov> [--exclude-pid pid]
 //       prints "recording" once frames are written; stops on SIGINT, SIGTERM or stdin closing.
+//   kladd-capture session --dir <folder> [--exclude-pid pid] [--exclude-apps json] [--deny-paths json]
+//       writes a session folder's live files (Session.swift); prints and stops like record.
 //   kladd-capture accessibility-status                    Accessibility: prints "granted" or "denied"
 //   kladd-capture accessibility-request --app <Kladd.app> [--timeout s]
 //   kladd-capture focus [--exclude-pid pid]               prints a FocusSnapshot as JSON (Focus.swift)
@@ -285,6 +287,8 @@ Task { @MainActor in
     await runScreenshot(args)
   case "record":
     await runRecord(args)
+  case "session":
+    await runSession(args)
   default:
     fail(
       "usage: kladd-capture status | request --app <path> | screenshot --out <file> | record --out <file>"
