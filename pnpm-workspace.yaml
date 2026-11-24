@@ -48,3 +48,9 @@ minimumReleaseAgeExclude:
   - knip@6.48.0
 allowBuilds:
   electron-winstaller: false
+permissions:
+  "@ui-sdk/core":
+    skills: true
+skills:
+  dirs:
+    - .claude/skills
