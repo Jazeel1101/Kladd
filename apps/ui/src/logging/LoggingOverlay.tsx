@@ -30,7 +30,7 @@ export const LoggingOverlay = () => {
   const opened = useAtomValue(loggingOverlayAtom);
   const info = AsyncResult.isSuccess(opened) ? opened.value : null;
   return (
-    <section className="flex h-screen flex-col gap-3 rounded-xl bg-white/95 p-4 text-sm shadow-lg">
+    <section className="flex h-screen flex-col gap-3 rounded-xl bg-white/95 p-4 text-sm text-neutral-900 shadow-lg">
       <header className="flex items-center justify-between">
         <h1 className="font-medium">Skriv logg</h1>
         <Button

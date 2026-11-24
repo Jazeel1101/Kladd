@@ -71,13 +71,31 @@ func json(_ rect: CGRect?) -> Any {
   return ["x": rect.origin.x, "y": rect.origin.y, "width": rect.width, "height": rect.height]
 }
 
+/// The app the user is in. The pill menu makes Kladd the active app (and it stays so after the
+/// menu closes), so when `excludePid` is in front this is the owner of the topmost normal window
+/// that isn't Kladd's: the app the user was in. Reading window owners needs no permission.
+func userApp(excludePid: pid_t?) -> NSRunningApplication? {
+  let front = NSWorkspace.shared.frontmostApplication
+  if let front, front.processIdentifier != excludePid { return front }
+  let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
+    as? [[String: Any]] ?? []
+  // Front to back. Layer 0 is normal windows: not the menu bar, Dock or Kladd's floating overlays.
+  for window in windows {
+    guard (window[kCGWindowLayer as String] as? Int) == 0,
+      let pid = window[kCGWindowOwnerPID as String] as? pid_t, pid != excludePid,
+      let app = NSRunningApplication(processIdentifier: pid), app.activationPolicy == .regular
+    else { continue }
+    return app
+  }
+  return nil
+}
+
 func focusSnapshot(excludePid: pid_t?) -> [String: Any] {
   var snapshot: [String: Any] = [
     "app": NSNull(), "window": NSNull(), "title": NSNull(), "element": NSNull(), "caret": NSNull(),
   ]
-  // Kladd's overlays don't take focus, so Kladd in front means one of its normal windows (Settings).
-  guard let front = NSWorkspace.shared.frontmostApplication, front.processIdentifier != excludePid,
-    let bundleId = front.bundleIdentifier
+  // An app's focused window and element stay readable over AX while it is in the background.
+  guard let front = userApp(excludePid: excludePid), let bundleId = front.bundleIdentifier
   else { return snapshot }
   snapshot["app"] = ["bundleId": bundleId, "name": front.localizedName ?? bundleId]
   guard AXIsProcessTrusted() else { return snapshot }
