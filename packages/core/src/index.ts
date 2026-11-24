@@ -1,3 +1,4 @@
+export * from "./capture/requireScreenCapture";
 export * from "./logging/LoggingOverlay";
 export * from "./ports/AppAdapters";
 export * from "./ports/FocusTracker";

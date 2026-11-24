@@ -5,6 +5,7 @@
 import {
   RecordingSessionId,
   ScreenCapturePermissionDenied,
+  type ScreenCapturePermission,
   emptyFocus,
   makeAppAdapter,
   type AppAdapter,
@@ -21,23 +22,39 @@ import { OverlayWindows } from "../ports/OverlayWindows";
 import { RecordingStore } from "../ports/RecordingStore";
 import { ScreenCapture } from "../ports/ScreenCapture";
 
-export const ScreenCaptureTest = {
-  granted: Layer.succeed(
+const screenCaptureTest = (
+  permission: ScreenCapturePermission,
+  afterRequest: ScreenCapturePermission,
+  /** Runs before every permission check: Effect.yieldNow lets concurrent calls interleave. */
+  pause: Effect.Effect<void> = Effect.void,
+) =>
+  Layer.effect(
     ScreenCapture,
-    ScreenCapture.of({ start: Effect.void, stop: Effect.void }),
-  ),
-  /** Like granted, but start and stop yield first, so concurrent calls interleave as with a real capture. */
-  slow: Layer.succeed(
-    ScreenCapture,
-    ScreenCapture.of({ start: Effect.yieldNow, stop: Effect.yieldNow }),
-  ),
-  denied: Layer.succeed(
-    ScreenCapture,
-    ScreenCapture.of({
-      start: Effect.fail(new ScreenCapturePermissionDenied({})),
-      stop: Effect.void,
+    Effect.gen(function* () {
+      const current = yield* Ref.make(permission);
+      const capture = Effect.flatMap(Ref.get(current), (now) =>
+        now === "granted" ? Effect.void : Effect.fail(new ScreenCapturePermissionDenied({})),
+      );
+      return ScreenCapture.of({
+        permission: Effect.andThen(pause, Ref.get(current)),
+        requestPermission: Ref.set(current, afterRequest).pipe(Effect.as(afterRequest)),
+        screenshot: () => capture,
+        recordVideo: () => Effect.as(capture, { stop: Effect.void }),
+      });
     }),
-  ),
+  );
+
+/** Screenshots and video succeed only while permission is granted. */
+export const ScreenCaptureTest = {
+  granted: screenCaptureTest("granted", "granted"),
+  /** Like granted, but the permission check yields first, so concurrent calls interleave. */
+  slow: screenCaptureTest("granted", "granted", Effect.yieldNow),
+  /** Denied, and the user does not grant it when asked. */
+  denied: screenCaptureTest("denied", "denied"),
+  /** Denied until asked; the user grants it. */
+  grantedOnRequest: screenCaptureTest("denied", "granted"),
+  /** Granted, but asking again would revoke it: shows that a granted permission is not requested. */
+  grantedRevokedOnRequest: screenCaptureTest("granted", "denied"),
 };
 
 /** In-memory store. Starts empty. */

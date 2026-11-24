@@ -2,6 +2,7 @@ import {
   NoActiveRecording,
   RecordingAlreadyActive,
   RecordingSession,
+  type ScreenCaptureFailed,
   type ScreenCapturePermissionDenied,
 } from "@kladd/domain";
 import {
@@ -14,6 +15,7 @@ import {
   type Stream,
   SubscriptionRef,
 } from "effect";
+import { requireScreenCapture } from "../capture/requireScreenCapture";
 import { LoggingOverlay } from "../logging/LoggingOverlay";
 import { Ids } from "../ports/Ids";
 import { RecordingStore } from "../ports/RecordingStore";
@@ -26,9 +28,10 @@ import { ScreenCapture } from "../ports/ScreenCapture";
 export class Recordings extends Context.Service<
   Recordings,
   {
+    /** Asks for screen capture permission first if Kladd doesn't have it. */
     readonly start: Effect.Effect<
       RecordingSession,
-      RecordingAlreadyActive | ScreenCapturePermissionDenied
+      RecordingAlreadyActive | ScreenCapturePermissionDenied | ScreenCaptureFailed
     >;
     /** Stops the active recording and opens the logging overlay. */
     readonly stop: Effect.Effect<RecordingSession, NoActiveRecording>;
@@ -53,7 +56,8 @@ export class Recordings extends Context.Service<
         if (Option.isSome(active)) {
           return yield* new RecordingAlreadyActive({ activeSessionId: active.value.id });
         }
-        yield* capture.start;
+        // Inside the permit, so a second start waits for this one's permission prompt.
+        yield* requireScreenCapture.pipe(Effect.provideService(ScreenCapture, capture));
         const session = new RecordingSession({
           id: yield* ids.recordingSessionId,
           startedAt: yield* DateTime.now,
@@ -67,7 +71,6 @@ export class Recordings extends Context.Service<
         const stopped = yield* Effect.gen(function* () {
           const active = yield* SubscriptionRef.get(current);
           if (Option.isNone(active)) return yield* new NoActiveRecording({});
-          yield* capture.stop;
           yield* store.clear;
           yield* SubscriptionRef.set(current, Option.none());
           return active.value;

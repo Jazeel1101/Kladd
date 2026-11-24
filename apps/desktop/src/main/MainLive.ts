@@ -32,6 +32,7 @@ const CoreLive = Recordings.layer.pipe(
   Layer.provideMerge(LoggingOverlay.layer),
   Layer.provide([PlatformLive, RecordingStoreFile, IdsLive, AppAdaptersLive]),
   Layer.provideMerge(ElectronPortsLive),
+  // NodeServices also gives PlatformLive its ChildProcessSpawner (the macOS capture helper).
   Layer.provide([StorageConfigLive, NodeServices.layer]),
 );
 

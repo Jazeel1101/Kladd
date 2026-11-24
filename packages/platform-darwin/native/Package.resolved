@@ -1,0 +1,15 @@
+{
+  "originHash" : "9c1ac9e6723206b02278e53c31378856dace3f04a23c4d466558645eca93b08d",
+  "pins" : [
+    {
+      "identity" : "permissionflow",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/noxaur/PermissionFlow.git",
+      "state" : {
+        "revision" : "cb96db4bfd2342e8d8c56f2a7d51ca65b8aed6e2",
+        "version" : "2.11.3"
+      }
+    }
+  ],
+  "version" : 3
+}

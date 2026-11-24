@@ -2,7 +2,7 @@
  * Dev loop for the Electron side: rebuild main + preload on change and restart Electron.
  * The UI dev server runs in apps/ui; start both with `pnpm dev` from the repo root.
  */
-import { spawn, type ChildProcess } from "node:child_process";
+import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 
 const uiUrl = "http://localhost:5173/";
 let electron: ChildProcess | undefined;
@@ -30,6 +30,14 @@ const restart = () => {
     startElectron();
   }, 200);
 };
+
+// The macOS screen capture helper (packages/platform-darwin/native). Incremental after the first build.
+if (process.platform === "darwin") {
+  const swift = spawnSync("vp", ["run", "@kladd/platform-darwin#build:native"], {
+    stdio: "inherit",
+  });
+  if (swift.status !== 0) process.exit(swift.status ?? 1);
+}
 
 const pack = spawn("vp", ["pack", "--watch"], { stdio: ["ignore", "pipe", "inherit"] });
 pack.stdout?.on("data", (chunk: Buffer) => {

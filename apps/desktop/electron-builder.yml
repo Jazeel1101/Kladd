@@ -1,4 +1,4 @@
-# Packaging + auto-update. Build with `pnpm --filter @kladd/desktop package`.
+# Packaging + auto-update. Build with `pnpm --filter @kladd/desktop package` (signing: docs/operations/signing.md).
 appId: com.kladd.app # TODO: confirm the bundle id before the first signed release.
 productName: Kladd
 directories:
@@ -11,10 +11,24 @@ files:
     to: ui
 # main/preload are fully bundled; only electron-updater is a runtime dependency.
 npmRebuild: false
+# Code signing: self-signed, since there is no Apple Developer account. See docs/operations/signing.md.
+forceCodeSigning: true
 mac:
   category: public.app-category.productivity
+  identity: Kladd Self-Signed
+  # The capture helper needs ScreenCaptureKit's SCRecordingOutput (macOS 15).
+  minimumSystemVersion: "15.0"
+  # Only notarization needs the hardened runtime, and it breaks library loading without a Team ID.
+  hardenedRuntime: false
+  notarize: false
   # zip is required for electron-updater on macOS.
   target: [dmg, zip]
+  # The screen capture helper and PermissionFlow's resources, which it loads from beside itself.
+  extraResources:
+    - from: ../../packages/platform-darwin/native/.build/release/kladd-capture
+      to: capture/kladd-capture
+    - from: ../../packages/platform-darwin/native/.build/release/PermissionFlow_PermissionFlow.bundle
+      to: capture/PermissionFlow_PermissionFlow.bundle
 publish:
   provider: github
   owner: Jazeel1101
