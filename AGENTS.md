@@ -49,7 +49,7 @@ The UI reaches main only through `KladdRpcs` over MessagePorts (`docs/internals/
 | `apps/desktop`             | Electron main + preload; the only place layers are wired   |
 | `apps/ui`                  | React renderer, one route per window                       |
 
-A feature that crosses packages follows the `adding-a-feature` skill and the "recording" slice: `packages/domain/src/RecordingSession.ts` → `packages/core/src/recording/Recordings.ts` → `packages/platform-darwin/src/ScreenCaptureDarwin.ts` + `packages/infra/src/recording/RecordingStoreFile.ts` → `apps/desktop/src/main/MainLive.ts`, watched through `WatchRecording` → `apps/ui/src/recording/atoms.ts` → `apps/ui/src/pill/`. A new app is one adapter file: `docs/operations/adding-app-support.md`.
+A feature that crosses packages copies the "recording" slice: `packages/domain/src/RecordingSession.ts` → `packages/core/src/recording/Recordings.ts` → `packages/platform-darwin/src/ScreenCaptureDarwin.ts` + `packages/infra/src/recording/RecordingStoreFile.ts` → `apps/desktop/src/main/MainLive.ts`, watched through `WatchRecording` → `apps/ui/src/recording/atoms.ts` → `apps/ui/src/pill/`. A new app is one adapter file: `docs/operations/adding-app-support.md`.
 
 Effect is v4 (`effect@4.1.5`), whose APIs differ from v3: read `node_modules/effect/ai-docs/` rather than recalling v3. Write functions with `Effect.fn("Name.method")`, services with `class X extends Context.Service<X, {...}>()("kladd/<package>/X")`, errors with `Schema.TaggedError` in domain. Toolchain choices that look like mistakes are explained in `docs/internals/toolchain.md`.
 
