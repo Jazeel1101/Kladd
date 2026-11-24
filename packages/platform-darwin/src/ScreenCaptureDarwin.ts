@@ -131,7 +131,7 @@ export const ScreenCaptureDarwin = (helper: CaptureHelper) =>
         }
 
         // Killing an already-exited helper fails; its exit status is the real answer either way.
-        const stop = handle.kill({ killSignal: "SIGINT" }).pipe(
+        const stop = handle.kill({ killSignal: "SIGINT", forceKillAfter: "10 seconds" }).pipe(
           Effect.ignore,
           Effect.andThen(exited),
           // The helper only exits with 77 before it records, so a later failure is never "denied".
