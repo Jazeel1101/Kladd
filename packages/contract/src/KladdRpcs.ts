@@ -3,6 +3,8 @@ import {
   LoggingOverlayInfo,
   OpenableWindow,
   RecordingSession,
+  ScreenshotId,
+  ScreenshotTray,
 } from "@kladd/domain";
 import { Schema } from "effect";
 import { Rpc, RpcGroup } from "effect/rpc";
@@ -25,6 +27,13 @@ export class KladdRpcs extends RpcGroup.make(
   }),
   /** Pops up the pill's native menu: start/stop recording, show the logging overlay, Settings, Quit. */
   Rpc.make("OpenPillMenu"),
+  /** The screenshot in flight and the ones in the logging overlay's tray, then every change. ⌃⇧C takes one. */
+  Rpc.make("WatchScreenshots", {
+    success: ScreenshotTray,
+    stream: true,
+  }),
+  /** The flight window's screenshot reached the tray. */
+  Rpc.make("LandScreenshot", { payload: { id: ScreenshotId } }),
   Rpc.make("ShowWindow", { payload: { kind: OpenableWindow } }),
   Rpc.make("HideWindow", { payload: { kind: ClosableWindow } }),
 ) {}

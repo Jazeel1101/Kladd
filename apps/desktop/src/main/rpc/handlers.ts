@@ -1,5 +1,5 @@
 import { KladdRpcs } from "@kladd/contract";
-import { LoggingOverlay, OverlayWindows, Recordings } from "@kladd/core";
+import { LoggingOverlay, OverlayWindows, Recordings, Screenshots } from "@kladd/core";
 import { Effect, Option, Stream } from "effect";
 import { PillMenu } from "../pillMenu";
 
@@ -12,10 +12,13 @@ export const RpcHandlersLive = KladdRpcs.toLayer(
     const recordings = yield* Recordings;
     const logging = yield* LoggingOverlay;
     const windows = yield* OverlayWindows;
+    const screenshots = yield* Screenshots;
     const pillMenu = yield* PillMenu;
     return {
       WatchRecording: () => Stream.map(recordings.changes, Option.getOrNull),
       WatchLoggingOverlay: () => logging.changes,
+      WatchScreenshots: () => screenshots.changes,
+      LandScreenshot: ({ id }) => screenshots.land(id),
       OpenPillMenu: () => pillMenu.open,
       ShowWindow: ({ kind }) => windows.show(kind),
       HideWindow: ({ kind }) => windows.hide(kind),

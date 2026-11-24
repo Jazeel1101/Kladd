@@ -1,0 +1,78 @@
+import {
+  type ScreenCaptureFailed,
+  type ScreenCapturePermissionDenied,
+  Screenshot,
+  type ScreenshotId,
+  type ScreenshotTray,
+  emptyScreenshotTray,
+  pillTarget,
+} from "@kladd/domain";
+import { Context, DateTime, Effect, Layer, Semaphore, type Stream, SubscriptionRef } from "effect";
+import { requireScreenCapture } from "../capture/requireScreenCapture";
+import { Ids } from "../ports/Ids";
+import { OverlayWindows } from "../ports/OverlayWindows";
+import { ScreenCapture } from "../ports/ScreenCapture";
+import { ScreenshotFiles } from "../ports/ScreenshotFiles";
+
+/** Moves the screenshot in flight, if any, to the front of the tray. */
+const landFlying = (tray: ScreenshotTray): ScreenshotTray =>
+  tray.flying === null
+    ? tray
+    : { flying: null, attached: [tray.flying.screenshot, ...tray.attached] };
+
+/**
+ * Use case: ⌃⇧C screenshots the whole main display and flies it into the pill.
+ * How the flight works: docs/internals/screenshot-flight.md.
+ */
+export class Screenshots extends Context.Service<
+  Screenshots,
+  {
+    /**
+     * Asks for screen capture permission first if Kladd doesn't have it, then starts the
+     * screenshot's flight into the pill. Leaves the logging overlay alone.
+     */
+    readonly take: Effect.Effect<Screenshot, ScreenCapturePermissionDenied | ScreenCaptureFailed>;
+    /** The flight window calls this when the screenshot reaches the pill. Ignores any other id. */
+    readonly land: (id: ScreenshotId) => Effect.Effect<void>;
+    /** The tray now, then on every take and land. */
+    readonly changes: Stream.Stream<ScreenshotTray>;
+  }
+>()("kladd/core/Screenshots") {
+  static readonly layer = Layer.effect(
+    Screenshots,
+    Effect.gen(function* () {
+      const capture = yield* ScreenCapture;
+      const files = yield* ScreenshotFiles;
+      const ids = yield* Ids;
+      const windows = yield* OverlayWindows;
+      const tray = yield* SubscriptionRef.make(emptyScreenshotTray);
+      // One take at a time, so two quick presses fly one after the other, in order.
+      const oneAtATime = Semaphore.withPermit(yield* Semaphore.make(1));
+
+      const take = Effect.gen(function* () {
+        yield* requireScreenCapture.pipe(Effect.provideService(ScreenCapture, capture));
+        const id = yield* ids.screenshotId;
+        yield* capture.screenshot(yield* files.file(id));
+        const display = yield* windows.mainDisplay;
+        const screenshot = new Screenshot({ id, takenAt: yield* DateTime.now, display });
+        // The pill is always on screen. If it somehow isn't, it is shown, so the flight has somewhere to land.
+        if ((yield* windows.bounds("pill")) === null) yield* windows.show("pill");
+        const to = pillTarget((yield* windows.bounds("pill")) ?? display, display);
+        // A screenshot still flying lands at once, so the new one always has the slot to itself.
+        yield* SubscriptionRef.update(tray, (current) => ({
+          ...landFlying(current),
+          flying: { screenshot, from: display, to },
+        }));
+        yield* windows.show("flight", display);
+        return screenshot;
+      }).pipe(oneAtATime, Effect.withSpan("Screenshots.take"));
+
+      const land = (id: ScreenshotId) =>
+        SubscriptionRef.update(tray, (current) =>
+          current.flying?.screenshot.id === id ? landFlying(current) : current,
+        ).pipe(Effect.withSpan("Screenshots.land"));
+
+      return Screenshots.of({ take, land, changes: SubscriptionRef.changes(tray) });
+    }),
+  );
+}

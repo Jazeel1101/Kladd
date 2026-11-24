@@ -7,6 +7,7 @@ import {
   FocusTrackingFailed,
   RecordingSessionId,
   ScreenCapturePermissionDenied,
+  ScreenshotId,
   type ScreenCapturePermission,
   emptyFocus,
   makeAppAdapter,
@@ -23,6 +24,7 @@ import { Ids } from "../ports/Ids";
 import { OverlayWindows } from "../ports/OverlayWindows";
 import { RecordingStore } from "../ports/RecordingStore";
 import { ScreenCapture } from "../ports/ScreenCapture";
+import { ScreenshotFiles } from "../ports/ScreenshotFiles";
 
 const screenCaptureTest = (
   permission: ScreenCapturePermission,
@@ -72,17 +74,32 @@ export const RecordingStoreTest = Layer.effect(
   }),
 );
 
-/** Returns "session-1", "session-2", ... */
+/**
+ * Recording sessions are "session-1", "session-2", ...; screenshots are UUIDs ending in their
+ * number: "00000000-0000-7000-8000-000000000001", ...
+ */
 export const IdsTest = Layer.effect(
   Ids,
   Effect.gen(function* () {
-    const counter = yield* Ref.make(0);
+    const sessions = yield* Ref.make(0);
+    const screenshots = yield* Ref.make(0);
     return Ids.of({
-      recordingSessionId: Ref.updateAndGet(counter, (n) => n + 1).pipe(
+      recordingSessionId: Ref.updateAndGet(sessions, (n) => n + 1).pipe(
         Effect.map((n) => RecordingSessionId.make(`session-${n}`)),
+      ),
+      screenshotId: Ref.updateAndGet(screenshots, (n) => n + 1).pipe(
+        Effect.map((n) =>
+          ScreenshotId.make(`00000000-0000-7000-8000-${String(n).padStart(12, "0")}`),
+        ),
       ),
     });
   }),
+);
+
+/** Screenshots go to /screenshots/<id>.png. */
+export const ScreenshotFilesTest = Layer.succeed(
+  ScreenshotFiles,
+  ScreenshotFiles.of({ file: (id) => Effect.succeed(`/screenshots/${id}.png`) }),
 );
 
 /** What FocusTrackerTest saw. Read it with `yield* FocusTrackerLog` in a test. */
@@ -155,15 +172,37 @@ export class OverlayWindowsLog extends Context.Service<
   Ref.Ref<ReadonlyArray<ShownWindow>>
 >()("kladd/core/testing/OverlayWindowsLog") {}
 
-/** Records every `show` in OverlayWindowsLog. Every window is 300x400 on a 1440x900 screen. */
+const testSize = { width: 300, height: 400 };
+const testDisplay = { x: 0, y: 0, width: 1440, height: 900 };
+
+/**
+ * Records every `show` in OverlayWindowsLog. Every window is 300x400 on a 1440x900 screen; one shown
+ * without bounds sits at the top left.
+ */
 export const OverlayWindowsTest = Layer.unwrap(
   Effect.gen(function* () {
     const log = yield* Ref.make<ReadonlyArray<ShownWindow>>([]);
+    const visible = yield* Ref.make<ReadonlyMap<WindowKind, Rect>>(new Map());
     const windows = OverlayWindows.of({
-      show: (kind, bounds) => Ref.update(log, (shown) => [...shown, { kind, bounds }]),
-      hide: () => Effect.void,
-      size: () => ({ width: 300, height: 400 }),
-      workArea: () => Effect.succeed({ x: 0, y: 0, width: 1440, height: 900 }),
+      show: (kind, bounds) =>
+        Ref.update(log, (shown) => [...shown, { kind, bounds }]).pipe(
+          Effect.andThen(
+            Ref.update(visible, (on) =>
+              new Map(on).set(kind, bounds ?? { x: 0, y: 0, ...testSize }),
+            ),
+          ),
+        ),
+      hide: (kind) =>
+        Ref.update(visible, (on) => {
+          const next = new Map(on);
+          next.delete(kind);
+          return next;
+        }),
+      prepare: () => Effect.void,
+      bounds: (kind) => Effect.map(Ref.get(visible), (on) => on.get(kind) ?? null),
+      size: () => testSize,
+      workArea: () => Effect.succeed(testDisplay),
+      mainDisplay: Effect.succeed(testDisplay),
     });
     return Layer.mergeAll(
       Layer.succeed(OverlayWindows, windows),

@@ -6,6 +6,7 @@ import { createRoot } from "react-dom/client";
 import { ExpandedView } from "./expanded/ExpandedView";
 import { LoggingOverlay } from "./logging/LoggingOverlay";
 import { RecordingPill } from "./pill/RecordingPill";
+import { ScreenshotFlight } from "./screenshot/ScreenshotFlight";
 import { Settings } from "./settings/Settings";
 import "./styles.css";
 
@@ -15,6 +16,7 @@ const windows: Record<WindowKind, ComponentType> = {
   logging: LoggingOverlay,
   expanded: ExpandedView,
   settings: Settings,
+  flight: ScreenshotFlight,
 };
 
 const kind = window.location.hash.slice(1);

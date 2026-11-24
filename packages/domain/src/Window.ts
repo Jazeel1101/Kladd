@@ -7,8 +7,10 @@ import { Schema } from "effect";
  * - logging: LoggingOverlay, next to where the user writes; opens when a recording stops.
  * - expanded: ExpandedView, summary and images, opened from the pill.
  * - settings: the only normal window, opened from the pill menu.
+ * - flight: ScreenshotFlight, a click-through overlay over the whole display that flies a new
+ *   screenshot into the logging overlay's tray.
  */
-export const WindowKind = Schema.Literals(["pill", "logging", "expanded", "settings"]);
+export const WindowKind = Schema.Literals(["pill", "logging", "expanded", "settings", "flight"]);
 export type WindowKind = typeof WindowKind.Type;
 
 /**
@@ -18,4 +20,4 @@ export type WindowKind = typeof WindowKind.Type;
 export const OpenableWindow = Schema.Literals(["expanded"]);
 
 /** Windows the UI may close itself (contract HideWindow). Not `pill`: it always stays. */
-export const ClosableWindow = Schema.Literals(["logging", "expanded"]);
+export const ClosableWindow = Schema.Literals(["logging", "expanded", "flight"]);
