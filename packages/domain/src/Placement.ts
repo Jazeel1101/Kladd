@@ -9,6 +9,10 @@ export const Rect = Schema.Struct({
 });
 export type Rect = typeof Rect.Type;
 
+/** A screen point, in the same coordinates as Rect. */
+export const Point = Schema.Struct({ x: Schema.Finite, y: Schema.Finite });
+export type Point = typeof Point.Type;
+
 export interface Size {
   readonly width: number;
   readonly height: number;
