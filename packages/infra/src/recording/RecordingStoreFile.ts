@@ -79,6 +79,22 @@ export const RecordingStoreFile = Layer.effect(
       .remove(file, { force: true })
       .pipe(Effect.orDie, Effect.withSpan("RecordingStoreFile.clear"));
 
+    const unfinished = Effect.gen(function* () {
+      if (!(yield* fs.exists(recordings))) return [];
+      const has = (folder: string, name: string) => fs.exists(path.join(folder, name));
+      const found: Array<string> = [];
+      for (const name of yield* fs.readDirectory(recordings)) {
+        const folder = path.join(recordings, name);
+        if ((yield* fs.stat(folder)).type !== "Directory") continue;
+        const finished =
+          (yield* has(folder, sessionFiles.overview)) &&
+          (!(yield* has(folder, sessionFiles.audio)) ||
+            (yield* has(folder, sessionFiles.transcript)));
+        if (!finished) found.push(folder);
+      }
+      return found;
+    }).pipe(Effect.orDie, Effect.withSpan("RecordingStoreFile.unfinished"));
+
     const folder = Effect.fn("RecordingStoreFile.folder")(function* (id: RecordingSessionId) {
       if (!(yield* fs.exists(recordings))) return Option.none<string>();
       const names = yield* fs.readDirectory(recordings);
@@ -137,6 +153,7 @@ export const RecordingStoreFile = Layer.effect(
       active,
       save,
       clear,
+      unfinished,
       folder,
       updateInfo,
       audio,

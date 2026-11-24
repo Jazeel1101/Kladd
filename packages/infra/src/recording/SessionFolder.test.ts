@@ -1,5 +1,5 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import { LoggingOverlay, RecordingStore, Recordings } from "@kladd/core";
+import { LoggingOverlay, RecordingStore, Recordings, Transcriber } from "@kladd/core";
 import {
   AppAdaptersTest,
   FocusTrackerTest,
@@ -18,12 +18,14 @@ import {
   renderOverview,
 } from "@kladd/domain";
 import { assert, describe, it } from "@effect/vitest";
-import { DateTime, Effect, FileSystem, Layer, Option, Ref, Schedule } from "effect";
+import { DateTime, Deferred, Effect, FileSystem, Layer, Option, Ref, Schedule } from "effect";
 import { StorageConfig } from "../StorageConfig";
 import { RecordingStoreFile } from "./RecordingStoreFile";
 
+type TranscriberLayer = Layer.Layer<Transcriber | TranscriberLog, never, FileSystem.FileSystem>;
+
 /** Recordings with the real file store in `dataDir`: what Kladd writes into a session folder. */
-const kladdIn = (dataDir: string, transcriber = TranscriberTest()) =>
+const kladdIn = (dataDir: string, transcriber: TranscriberLayer = TranscriberTest()) =>
   Recordings.layer.pipe(
     Layer.provide(LoggingOverlay.layer),
     Layer.provide([ScreenCaptureTest.granted, IdsTest, FocusTrackerTest(), AppAdaptersTest()]),
@@ -32,13 +34,62 @@ const kladdIn = (dataDir: string, transcriber = TranscriberTest()) =>
     Layer.provide(Layer.succeed(StorageConfig, StorageConfig.of({ dataDir, appVersion: "1.2.3" }))),
   );
 
-const kladdInTemp = (transcriber = TranscriberTest()) =>
+const kladdInTemp = (transcriber: TranscriberLayer = TranscriberTest()) =>
   Layer.unwrap(
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       return kladdIn(yield* fs.makeTempDirectoryScoped(), transcriber);
     }),
   ).pipe(Layer.provideMerge(NodeServices.layer));
+
+/**
+ * Whisper as kladd-transcribe runs it: no model until `ready` is done, then writes `speech` as one
+ * segment, or an empty transcript for "". Logs in TranscriberLog.
+ */
+const whisper = (ready: Deferred.Deferred<void>, speech = "hei") =>
+  Layer.unwrap(
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const log = yield* Ref.make<{ prepared: number; transcribed: ReadonlyArray<string> }>({
+        prepared: 0,
+        transcribed: [],
+      });
+      const transcribe = Effect.fn("test.whisper.transcribe")(function* (
+        audio: string,
+        out: string,
+      ) {
+        yield* Ref.update(log, (l) => ({ ...l, transcribed: [...l.transcribed, audio] }));
+        if (!(yield* Deferred.isDone(ready))) {
+          return yield* new TranscriptionFailed({ reason: "model not downloaded yet" });
+        }
+        const line = speech === "" ? "" : `${JSON.stringify({ t: 0, end: 1, text: speech })}\n`;
+        yield* fs.writeFileString(out, line).pipe(Effect.orDie);
+        return "no";
+      });
+      return Layer.mergeAll(
+        Layer.succeed(Transcriber, Transcriber.of({ prepare: Deferred.await(ready), transcribe })),
+        Layer.succeed(TranscriberLog, log),
+      );
+    }),
+  );
+
+/** A folder the last launch saved and stopped, with audio, but quit before finishing. */
+const leftUnfinished = Effect.fn("test.leftUnfinished")(function* (id: string, audio: boolean) {
+  const store = yield* RecordingStore;
+  const folder = yield* store.save(
+    new RecordingSession({
+      id: RecordingSessionId.make(id),
+      startedAt: DateTime.makeUnsafe("2026-11-24T13:02:00Z"),
+    }),
+  );
+  yield* store.clear;
+  if (audio) yield* writeAudio(folder);
+  return folder;
+});
+
+const transcribed = Effect.gen(function* () {
+  return (yield* Ref.get(yield* TranscriberLog)).transcribed;
+});
 
 const sessionJson = Effect.fn("test.sessionJson")(function* (folder: string) {
   const fs = yield* FileSystem.FileSystem;
@@ -131,6 +182,100 @@ describe("session folder", () => {
         assert.isNull((yield* sessionJson(folder)).stoppedAt);
         assert.isFalse(yield* fs.exists(`${dataDir}/active-recording.json`));
       }).pipe(Effect.provide(kladdIn(dataDir)));
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
+
+  it.live("a recording stopped before the model is ready is transcribed once it is", () =>
+    Effect.gen(function* () {
+      const ready = yield* Deferred.make<void>();
+      yield* Effect.gen(function* () {
+        const folder = yield* recordOnce(writeAudio);
+        assert.notInclude(yield* overviewOf(folder), "hei");
+        yield* Deferred.succeed(ready, undefined);
+        const rewritten = yield* overviewOf(folder).pipe(
+          Effect.filterOrFail((text) => text.includes("hei")),
+          Effect.retry({ schedule: Schedule.spaced("10 millis"), times: 200 }),
+        );
+        assert.include(rewritten, "hei");
+        assert.strictEqual((yield* sessionJson(folder)).language, "no");
+        assert.deepStrictEqual(yield* transcribed, [`${folder}/audio.m4a`, `${folder}/audio.m4a`]);
+      }).pipe(Effect.provide(kladdInTemp(whisper(ready))));
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
+
+  it.live("folders a quit left without overview.md are finished on the next launch", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const dataDir = yield* fs.makeTempDirectoryScoped();
+      const [silent, spoken] = yield* Effect.all([
+        leftUnfinished("session-7", false),
+        leftUnfinished("session-8", true),
+      ]).pipe(Effect.provide(kladdIn(dataDir, whisper(yield* Deferred.make<void>()))));
+
+      const ready = yield* Deferred.make<void>();
+      yield* Effect.gen(function* () {
+        // Without audio it needs no model.
+        yield* overviewOf(silent);
+        assert.isFalse(yield* fs.exists(`${spoken}/overview.md`));
+        yield* Deferred.succeed(ready, undefined);
+        assert.include(yield* overviewOf(spoken), "hei");
+        assert.deepStrictEqual(yield* transcribed, [`${spoken}/audio.m4a`]);
+      }).pipe(Effect.provide(kladdIn(dataDir, whisper(ready))));
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
+
+  it.live("a finished folder, even of silence, is left alone on the next launch", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const dataDir = yield* fs.makeTempDirectoryScoped();
+      const ready = yield* Deferred.make<void>();
+      yield* Deferred.succeed(ready, undefined);
+      const folder = yield* recordOnce(writeAudio).pipe(
+        Effect.provide(kladdIn(dataDir, whisper(ready, ""))),
+      );
+      assert.strictEqual(yield* fs.readFileString(`${folder}/transcript.jsonl`), "");
+
+      yield* Effect.gen(function* () {
+        assert.deepStrictEqual(yield* (yield* RecordingStore).unfinished, []);
+        yield* Effect.sleep("100 millis");
+        assert.deepStrictEqual(yield* transcribed, []);
+      }).pipe(Effect.provide(kladdIn(dataDir, whisper(ready, ""))));
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
+
+  it.live("a transcription that keeps failing is tried once per launch", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const dataDir = yield* fs.makeTempDirectoryScoped();
+      const folder = yield* leftUnfinished("session-7", true).pipe(
+        Effect.provide(kladdIn(dataDir)),
+      );
+      const broken = TranscriberTest(new TranscriptionFailed({ reason: "bad audio" }));
+      yield* Effect.gen(function* () {
+        yield* overviewOf(folder);
+        yield* Effect.sleep("100 millis");
+        assert.deepStrictEqual(yield* transcribed, [`${folder}/audio.m4a`]);
+      }).pipe(Effect.provide(kladdIn(dataDir, broken)));
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
+
+  it.live("the active recording's folder is not finished when the model gets ready", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const ready = yield* Deferred.make<void>();
+      yield* Effect.gen(function* () {
+        const recordings = yield* Recordings;
+        yield* recordings.start;
+        const [folder] = (yield* Ref.get(yield* SessionCaptureLog)).started;
+        assert.isDefined(folder);
+        yield* writeAudio(folder);
+        yield* Deferred.succeed(ready, undefined);
+        yield* Effect.sleep("100 millis");
+        assert.deepStrictEqual(yield* transcribed, []);
+        assert.isFalse(yield* fs.exists(`${folder}/overview.md`));
+        yield* recordings.stop;
+        assert.include(yield* overviewOf(folder), "hei");
+      }).pipe(Effect.provide(kladdInTemp(whisper(ready))));
     }).pipe(Effect.provide(NodeServices.layer)),
   );
 });

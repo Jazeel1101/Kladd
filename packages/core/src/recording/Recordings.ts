@@ -39,7 +39,8 @@ interface Running {
 /**
  * Use case: start, stop and watch recordings. Each recording captures into its own session folder,
  * finished in the background after stop (finishSession). Stopping a recording starts logging mode.
- * A recording a crash left active is finished when Kladd opens, not resumed.
+ * A folder left unfinished, such as by a crash or by a stop before the model was ready, is finished
+ * when Kladd opens and once the model is ready; a crashed recording is not resumed.
  * A use case depends on ports (../ports) and other use cases, never on infra or platform code.
  */
 export class Recordings extends Context.Service<
@@ -83,12 +84,10 @@ export class Recordings extends Context.Service<
       const asking = yield* Semaphore.make(1);
 
       // Transcription and overview outlive stop, and never fail it: their failures are logged.
-      const finishInBackground = (folder: string, stopped: boolean) =>
+      const finishInBackground = (folder: string) =>
         Effect.gen(function* () {
-          if (stopped) {
-            const stoppedAt = yield* DateTime.now;
-            yield* store.updateInfo(folder, (info) => ({ ...info, stoppedAt }));
-          }
+          const stoppedAt = yield* DateTime.now;
+          yield* store.updateInfo(folder, (info) => ({ ...info, stoppedAt }));
           yield* finishSession(folder).pipe(
             Effect.provideService(RecordingStore, store),
             Effect.provideService(Transcriber, transcriber),
@@ -98,19 +97,39 @@ export class Recordings extends Context.Service<
           Effect.forkIn(layerScope),
         );
 
-      // Downloads the Whisper model if it is missing, so the first transcription doesn't wait.
+      // A folder is finished once it has overview.md, and transcript.jsonl if it has audio; nothing
+      // else marks it, so a crash or quit before finishSession leaves it to the next launch. Each
+      // runs once per launch: one that keeps failing waits for the next.
+      const finishUnfinished = Effect.fn("Recordings.finishUnfinished")(function* (
+        needsModel: boolean,
+      ) {
+        for (const folder of yield* store.unfinished) {
+          // save marks a recording active before its capture starts.
+          const active = yield* store.active;
+          if (Option.isSome(active)) {
+            const recording = yield* store.folder(active.value.id);
+            if (Option.contains(recording, folder)) continue;
+          }
+          if (Option.isSome(yield* store.audio(folder)) !== needsModel) continue;
+          yield* finishSession(folder).pipe(
+            Effect.provideService(RecordingStore, store),
+            Effect.provideService(Transcriber, transcriber),
+            Effect.ignoreCause({ log: "Warn", message: "Could not finish the session folder" }),
+          );
+        }
+      });
+
+      // A recording a crash left active is no longer recording; it is finished below, as it is,
+      // without a stop time.
+      if (Option.isSome(yield* store.active)) yield* store.clear;
+      yield* finishUnfinished(false).pipe(Effect.forkIn(layerScope));
+
+      // Downloads the Whisper model if it is missing, then transcribes what was saved without it.
       yield* transcriber.prepare.pipe(
+        Effect.andThen(finishUnfinished(true)),
         Effect.ignoreCause({ log: "Warn", message: "Could not prepare transcription" }),
         Effect.forkIn(layerScope),
       );
-
-      // Its capture died with the app: finish it as it is, without a stop time.
-      const crashed = yield* store.active;
-      if (Option.isSome(crashed)) {
-        yield* store.clear;
-        const folder = yield* store.folder(crashed.value.id);
-        if (Option.isSome(folder)) yield* finishInBackground(folder.value, false);
-      }
 
       const start = Effect.gen(function* () {
         const active = yield* SubscriptionRef.get(current);
@@ -132,7 +151,7 @@ export class Recordings extends Context.Service<
             Effect.all([
               Scope.close(scope, Exit.failCause(cause)),
               store.clear,
-              finishInBackground(folder, true),
+              finishInBackground(folder),
             ]),
           ),
         );
@@ -162,7 +181,7 @@ export class Recordings extends Context.Service<
               ),
             );
             yield* Scope.close(scope, Exit.void);
-            yield* finishInBackground(folder, true);
+            yield* finishInBackground(folder);
           }
           return active.value;
         }).pipe(exclusive);

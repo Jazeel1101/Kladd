@@ -148,6 +148,7 @@ export const RecordingStoreTest = Layer.effect(
   Effect.gen(function* () {
     const ref = yield* Ref.make(Option.none<RecordingSession>());
     const infos = yield* Ref.make(new Map<string, SessionInfo>());
+    const overviews = yield* Ref.make(new Set<string>());
     const folderOf = (id: string) => `/recordings/${id}`;
     const info = (folder: string) =>
       Ref.get(infos).pipe(
@@ -171,6 +172,10 @@ export const RecordingStoreTest = Layer.effect(
         return folder;
       }),
       clear: Ref.set(ref, Option.none()),
+      unfinished: Effect.gen(function* () {
+        const written = yield* Ref.get(overviews);
+        return [...(yield* Ref.get(infos)).keys()].filter((folder) => !written.has(folder));
+      }),
       folder: (id) =>
         Ref.get(infos).pipe(
           Effect.map((all) => Option.some(folderOf(id)).pipe(Option.filter((f) => all.has(f)))),
@@ -182,7 +187,7 @@ export const RecordingStoreTest = Layer.effect(
       audio: () => Effect.succeedNone,
       read: (folder) =>
         Effect.map(info(folder), (session) => ({ session, events: [], files: [], transcript: [] })),
-      writeOverview: () => Effect.void,
+      writeOverview: (folder) => Ref.update(overviews, (all) => new Set(all).add(folder)),
     });
   }),
 );

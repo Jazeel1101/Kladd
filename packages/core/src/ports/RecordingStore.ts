@@ -28,6 +28,11 @@ export class RecordingStore extends Context.Service<
     readonly save: (session: RecordingSession) => Effect.Effect<string>;
     /** Forgets the active session; its folder stays. */
     readonly clear: Effect.Effect<void>;
+    /**
+     * Every session folder not finished yet: without `overview.md`, or with `audio.m4a` but no
+     * `transcript.jsonl`. Includes the active session's.
+     */
+    readonly unfinished: Effect.Effect<ReadonlyArray<string>>;
     /** The folder `save` created for `id`, if it did. */
     readonly folder: (id: RecordingSessionId) => Effect.Effect<Option.Option<string>>;
     /** Changes the folder's `session.json`. */

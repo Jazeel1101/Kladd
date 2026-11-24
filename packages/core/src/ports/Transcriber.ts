@@ -13,7 +13,8 @@ export class Transcriber extends Context.Service<
     readonly prepare: Effect.Effect<void, TranscriptionFailed>;
     /**
      * Writes `audioFile`'s speech to `transcriptFile`, one TranscriptSegment per line, and returns
-     * the language it detected, such as "no".
+     * the language it detected, such as "no". Writes the file even when nobody speaks: a session
+     * folder with audio is finished only once it has one.
      */
     readonly transcribe: (
       audioFile: string,
