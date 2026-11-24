@@ -5,6 +5,9 @@
 import {
   type AccessibilityPermission,
   FocusTrackingFailed,
+  type ScreenCaptureFailed,
+  type SessionInfo,
+  type TranscriptionFailed,
   RecordingSessionId,
   ScreenCapturePermissionDenied,
   ScreenshotId,
@@ -63,27 +66,123 @@ export const ScreenCaptureTest = {
   grantedRevokedOnRequest: screenCaptureTest("granted", "denied"),
 };
 
-/** Starts and stops at once and writes nothing. */
-export const SessionCaptureTest = Layer.succeed(
-  SessionCapture,
-  SessionCapture.of({ start: () => Effect.succeed({ stop: Effect.void }) }),
-);
+/** What SessionCaptureTest saw. Read it with `yield* SessionCaptureLog` in a test. */
+export class SessionCaptureLog extends Context.Service<
+  SessionCaptureLog,
+  Ref.Ref<{ readonly started: ReadonlyArray<string>; readonly stopped: number }>
+>()("kladd/core/testing/SessionCaptureLog") {}
 
-/** The model is always there; every recording is in Norwegian and writes no transcript. */
-export const TranscriberTest = Layer.succeed(
-  Transcriber,
-  Transcriber.of({ prepare: Effect.void, transcribe: () => Effect.succeed("no") }),
-);
+/**
+ * Starts and stops at once and writes nothing; logs the folders it started in, and stops, in
+ * SessionCaptureLog. Given a `start` or `stop` failure, that step fails with it.
+ */
+export const SessionCaptureTest = (
+  fail: {
+    readonly start?: ScreenCaptureFailed;
+    readonly stop?: ScreenCaptureFailed;
+  } = {},
+) =>
+  Layer.unwrap(
+    Effect.gen(function* () {
+      const log = yield* Ref.make<{ started: ReadonlyArray<string>; stopped: number }>({
+        started: [],
+        stopped: 0,
+      });
+      const stop = Ref.update(log, (l) => ({ ...l, stopped: l.stopped + 1 })).pipe(
+        Effect.andThen(fail.stop ? Effect.fail(fail.stop) : Effect.void),
+      );
+      const capture = SessionCapture.of({
+        start: (dir) =>
+          fail.start
+            ? Effect.fail(fail.start)
+            : Ref.update(log, (l) => ({ ...l, started: [...l.started, dir] })).pipe(
+                Effect.as({ stop }),
+              ),
+      });
+      return Layer.mergeAll(
+        Layer.succeed(SessionCapture, capture),
+        Layer.succeed(SessionCaptureLog, log),
+      );
+    }),
+  );
 
-/** In-memory store. Starts empty. */
+/** What TranscriberTest saw: the audio file of every transcribe. Read it with `yield* TranscriberLog`. */
+export class TranscriberLog extends Context.Service<
+  TranscriberLog,
+  Ref.Ref<{ readonly prepared: number; readonly transcribed: ReadonlyArray<string> }>
+>()("kladd/core/testing/TranscriberLog") {}
+
+/**
+ * The model is always there; writes no transcript and detects `language` (default "no"). Given a
+ * TranscriptionFailed, every transcribe fails with it.
+ */
+export const TranscriberTest = (language: string | TranscriptionFailed = "no") =>
+  Layer.unwrap(
+    Effect.gen(function* () {
+      const log = yield* Ref.make<{ prepared: number; transcribed: ReadonlyArray<string> }>({
+        prepared: 0,
+        transcribed: [],
+      });
+      const transcriber = Transcriber.of({
+        prepare: Ref.update(log, (l) => ({ ...l, prepared: l.prepared + 1 })),
+        transcribe: (audio) =>
+          Ref.update(log, (l) => ({ ...l, transcribed: [...l.transcribed, audio] })).pipe(
+            Effect.andThen(
+              typeof language === "string" ? Effect.succeed(language) : Effect.fail(language),
+            ),
+          ),
+      });
+      return Layer.mergeAll(
+        Layer.succeed(Transcriber, transcriber),
+        Layer.succeed(TranscriberLog, log),
+      );
+    }),
+  );
+
+/**
+ * In-memory store. Starts empty. Folders are `/recordings/<id>`, with no audio and no live files;
+ * RecordingStoreFile's tests cover reading real ones.
+ */
 export const RecordingStoreTest = Layer.effect(
   RecordingStore,
   Effect.gen(function* () {
     const ref = yield* Ref.make(Option.none<RecordingSession>());
+    const infos = yield* Ref.make(new Map<string, SessionInfo>());
+    const folderOf = (id: string) => `/recordings/${id}`;
+    const info = (folder: string) =>
+      Ref.get(infos).pipe(
+        Effect.flatMap((all) => Effect.fromNullishOr(all.get(folder))),
+        Effect.orDie,
+      );
     return RecordingStore.of({
       active: Ref.get(ref),
-      save: (session) => Ref.set(ref, Option.some(session)),
+      save: Effect.fn("RecordingStoreTest.save")(function* (session: RecordingSession) {
+        const folder = folderOf(session.id);
+        const created: SessionInfo = {
+          id: session.id,
+          startedAt: session.startedAt,
+          stoppedAt: null,
+          language: null,
+          appVersion: "0.0.0-test",
+          layout: 1,
+        };
+        yield* Ref.update(infos, (all) => new Map(all).set(folder, created));
+        yield* Ref.set(ref, Option.some(session));
+        return folder;
+      }),
       clear: Ref.set(ref, Option.none()),
+      folder: (id) =>
+        Ref.get(infos).pipe(
+          Effect.map((all) => Option.some(folderOf(id)).pipe(Option.filter((f) => all.has(f)))),
+        ),
+      updateInfo: (folder, update) =>
+        Effect.flatMap(info(folder), (current) =>
+          Ref.update(infos, (all) => new Map(all).set(folder, update(current))),
+        ),
+      audio: () => Effect.succeedNone,
+      read: (folder) =>
+        Effect.map(info(folder), (session) => ({ session, events: [], files: [], transcript: [] })),
+      writeOverview: () => Effect.void,
     });
   }),
 );

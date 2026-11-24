@@ -7,5 +7,6 @@ export * from "./RecordingSession";
 export * from "./Screenshot";
 export * from "./ScreenCapture";
 export * from "./SessionFolder";
+export * from "./SessionFolderName";
 export * from "./Window";
 export * from "./WritingTarget";

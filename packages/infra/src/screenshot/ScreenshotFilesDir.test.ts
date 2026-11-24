@@ -11,7 +11,9 @@ const inTempDir = Layer.unwrap(
     const fs = yield* FileSystem.FileSystem;
     const dataDir = yield* fs.makeTempDirectoryScoped();
     return ScreenshotFilesDir.pipe(
-      Layer.provideMerge(Layer.succeed(StorageConfig, StorageConfig.of({ dataDir }))),
+      Layer.provideMerge(
+        Layer.succeed(StorageConfig, StorageConfig.of({ dataDir, appVersion: "1.2.3" })),
+      ),
     );
   }),
 ).pipe(Layer.provideMerge(NodeServices.layer));
