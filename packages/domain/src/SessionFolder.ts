@@ -29,6 +29,51 @@ export const sessionFiles = {
   summary: "summary.md",
 } as const;
 
+/** The session folder's `clips/`: one folder per clip, named by clipName. */
+export const clipsFolder = "clips";
+
+/**
+ * The files of one clip (GLOSSARY: "klipp"): a whole-screen video with sound, taken with ⌥⇧C
+ * inside a work session. Times in a clip's files are seconds since that clip started.
+ */
+export const clipFiles = {
+  /** ClipInfo. */
+  clip: "clip.json",
+  /** Live: the whole main display, with the ink drawn on it. */
+  video: "screen.mp4",
+  /** Live: the microphone. Missing without microphone permission. */
+  audio: "audio.m4a",
+  /** Live: one Mark per line. */
+  marks: "marks.jsonl",
+  /** After the clip stops: one TranscriptSegment per line. */
+  transcript: "transcript.jsonl",
+} as const;
+
+/** The folder name of a session's nth clip, from 1: 3 -> "003". */
+export const clipName = (n: number): string => String(n).padStart(3, "0");
+
+/** `clip.json`. */
+export const ClipInfo = Schema.Struct({
+  startedAt: Schema.DateTimeUtc,
+  /** Null while it records, and after a crash. */
+  stoppedAt: Schema.NullOr(Schema.DateTimeUtc),
+  /** The spoken language Whisper detected, such as "no". Null without a transcript. */
+  language: Schema.NullOr(Schema.String),
+});
+export type ClipInfo = typeof ClipInfo.Type;
+
+/**
+ * One line of a clip's `marks.jsonl`: a red stroke the student drew on the screen
+ * (GLOSSARY: "strek"), from `t` to `end`.
+ */
+export const Mark = Schema.Struct({
+  t: Schema.Number,
+  end: Schema.Number,
+  /** The stroke as [x, y] in points on the main display, from its top-left corner. */
+  points: Schema.Array(Schema.Tuple([Schema.Number, Schema.Number])),
+});
+export type Mark = typeof Mark.Type;
+
 /** `t` as a frame or focus file's name, without extension: 815 -> "000815". */
 export const frameName = (t: number): string => String(Math.floor(t)).padStart(6, "0");
 

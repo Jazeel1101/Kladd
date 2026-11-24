@@ -22,6 +22,7 @@ import {
 } from "@kladd/domain";
 import { Context, Effect, Layer, Option, Ref, Stream } from "effect";
 import { AppAdapters } from "../ports/AppAdapters";
+import { ClipCapture } from "../ports/ClipCapture";
 import { FocusTracker } from "../ports/FocusTracker";
 import { Ids } from "../ports/Ids";
 import { OverlayWindows } from "../ports/OverlayWindows";
@@ -65,6 +66,12 @@ export const ScreenCaptureTest = {
   /** Granted, but asking again would revoke it: shows that a granted permission is not requested. */
   grantedRevokedOnRequest: screenCaptureTest("granted", "denied"),
 };
+
+/** Starts and stops at once and writes nothing. */
+export const ClipCaptureTest = Layer.succeed(
+  ClipCapture,
+  ClipCapture.of({ start: () => Effect.succeed({ stop: Effect.void }) }),
+);
 
 /** What SessionCaptureTest saw. Read it with `yield* SessionCaptureLog` in a test. */
 export class SessionCaptureLog extends Context.Service<

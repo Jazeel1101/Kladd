@@ -2,6 +2,7 @@ export * from "./capture/requireScreenCapture";
 export * from "./focus/askForAccessibility";
 export * from "./logging/LoggingOverlay";
 export * from "./ports/AppAdapters";
+export * from "./ports/ClipCapture";
 export * from "./ports/FocusTracker";
 export * from "./ports/Ids";
 export * from "./ports/OverlayWindows";
