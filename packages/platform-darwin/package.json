@@ -13,5 +13,8 @@
     "@kladd/core": "workspace:*",
     "@kladd/domain": "workspace:*",
     "effect": "catalog:"
+  },
+  "devDependencies": {
+    "vite-plus": "catalog:"
   }
 }
