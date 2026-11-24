@@ -4,6 +4,7 @@ import type { ScreenshotFlight } from "@kladd/domain";
 import { AsyncResult } from "effect/reactivity";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { screenshotTrayAtom } from "../screenshot/atoms";
+import { goneAt } from "./intake";
 import type { NotchFrame } from "./notchPlacement";
 
 /** A beat with the screenshot in the open tray before it shuts. */
@@ -31,8 +32,9 @@ const reducedMotion = () => window.matchMedia("(prefers-reduced-motion: reduce)"
 /**
  * The intake (src/pill/intake.ts): while a ⌃⇧C screenshot flies, the tray is `open`. Once it has
  * landed, `thumbnail` shows it where the flight window left it, which main hides a moment later
- * (`Screenshots.land`); after a beat it is `closing` and the tray slides back over it, the screenshot
- * sliding into the pill's resting box as it goes. With reduced motion the pill stays as it is.
+ * (`Screenshots.land`); after a beat it is `closing` and the tray slides back into the pill. The
+ * screenshot doesn't move: the tray's edge cuts it off as it passes, so it ends up inside the pill.
+ * With reduced motion the pill stays as it is.
  */
 export const useScreenshotIntake = (frame: NotchFrame) => {
   const tray = useAtomValue(screenshotTrayAtom);
@@ -50,17 +52,14 @@ export const useScreenshotIntake = (frame: NotchFrame) => {
   const id = intake?.flight.screenshot.id ?? null;
   const landed = intake !== null && intake.phase !== "open" ? id : null;
 
-  // In the window, where the flight leaves it, and what of it lies outside the resting pill.
+  // In the window, where the flight leaves it, and what of it is cut off once the tray has shut.
+  // It starts inside the tray's edge and ends at it, on the tray's timing, so it is always inside.
   const to = intake?.flight.to;
   const at = to && { left: to.x - frame.window.x, top: to.y - frame.window.y };
-  const { box } = frame;
-  const [top, bottom] = to && at ? outside(at.top, to.height, box.top, box.height) : [0, 0];
-  const [left, right] = to && at ? outside(at.left, to.width, box.left, box.width) : [0, 0];
+  const gone = goneAt(frame);
+  const [top, bottom] = to && at ? outside(at.top, to.height, gone.y, gone.height) : [0, 0];
+  const [left, right] = to && at ? outside(at.left, to.width, gone.x, gone.width) : [0, 0];
   const closed = `inset(${top}px ${right}px ${bottom}px ${left}px round ${radius}px)`;
-  const shift =
-    to && at
-      ? `${0.4 * (box.left + box.width / 2 - at.left - to.width / 2)}px ${0.4 * (box.top + box.height / 2 - at.top - to.height / 2)}px`
-      : "0px 0px";
 
   // Decoded while it flies, so it shows the moment it lands.
   useEffect(() => {
@@ -72,8 +71,8 @@ export const useScreenshotIntake = (frame: NotchFrame) => {
   }, [id]);
 
   useEffect(() => {
-    const [held, img] = [element.current, image.current];
-    if (landed === null || held === null || img === null) return;
+    const held = element.current;
+    if (landed === null || held === null) return;
     const total = HOLD + CLOSE;
     const fill = "forwards" as const;
     const animations = [
@@ -86,18 +85,6 @@ export const useScreenshotIntake = (frame: NotchFrame) => {
         ],
         { duration: total, fill },
       ),
-      img.animate([{ translate: "0px 0px" }, { translate: shift }], {
-        delay: HOLD,
-        duration: CLOSE,
-        easing: closeEasing,
-        fill,
-      }),
-      // A floating pill's box still shows the middle of it: that part fades as the pill closes.
-      held.animate([{ opacity: 1 }, { opacity: 0 }], {
-        delay: HOLD + CLOSE / 2,
-        duration: CLOSE / 2,
-        fill,
-      }),
     ];
     const ours = (now: Intake | null) => now?.flight.screenshot.id === landed;
     const closing = setTimeout(
@@ -112,7 +99,7 @@ export const useScreenshotIntake = (frame: NotchFrame) => {
       clearTimeout(closing);
       animations.forEach((a) => a.cancel());
     };
-  }, [landed, closed, shift]);
+  }, [landed, closed]);
 
   const thumbnail: ReactNode =
     intake === null || to === undefined || at === undefined ? null : (
