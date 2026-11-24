@@ -28,6 +28,7 @@
           "effect/reactivity",
           "effect/crypto",
           "effect/net",
+          "effect/process",
           "effect/FileSystem",
           "effect/Path",
           "@effect/atom-react",

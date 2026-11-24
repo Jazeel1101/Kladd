@@ -8,7 +8,8 @@
   "scripts": {
     "dev": "node scripts/dev.ts",
     "build": "vp pack",
-    "package": "vp pack && vp run @kladd/ui#build && electron-builder --config electron-builder.yml",
+    "package": "vp pack && vp run @kladd/ui#build && vp run @kladd/platform-darwin#build:native && electron-builder --config electron-builder.yml",
+    "signing:setup": "sh scripts/create-signing-identity.sh",
     "typecheck": "effect-tsgo tsc -p tsconfig.json && effect-tsgo tsc -p tsconfig.preload.json"
   },
   "dependencies": {

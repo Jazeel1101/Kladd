@@ -7,12 +7,16 @@ export class PillMenu extends Context.Service<PillMenu, { readonly open: Effect.
   "kladd/desktop/PillMenu",
 ) {}
 
-const startErrorMessage = (tag: "RecordingAlreadyActive" | "ScreenCapturePermissionDenied") => {
+const startErrorMessage = (
+  tag: "RecordingAlreadyActive" | "ScreenCapturePermissionDenied" | "ScreenCaptureFailed",
+) => {
   switch (tag) {
     case "RecordingAlreadyActive":
       return "A recording is already running.";
     case "ScreenCapturePermissionDenied":
       return "Kladd needs screen recording permission (System Settings → Privacy & Security).";
+    case "ScreenCaptureFailed":
+      return "Kladd could not reach the screen. Try again, or restart Kladd.";
   }
 };
 

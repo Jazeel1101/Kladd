@@ -22,11 +22,6 @@ export class RecordingAlreadyActive extends Schema.TaggedError<
   { readonly brand: unique symbol }
 >()("RecordingAlreadyActive", { activeSessionId: RecordingSessionId }) {}
 
-export class ScreenCapturePermissionDenied extends Schema.TaggedError<
-  ScreenCapturePermissionDenied,
-  { readonly brand: unique symbol }
->()("ScreenCapturePermissionDenied", {}) {}
-
 export class NoActiveRecording extends Schema.TaggedError<
   NoActiveRecording,
   { readonly brand: unique symbol }
