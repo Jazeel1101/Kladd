@@ -1,3 +1,4 @@
+export * from "./AllowRead";
 export * from "./AppAdapter";
 export * from "./Focus";
 export * from "./Overview";
