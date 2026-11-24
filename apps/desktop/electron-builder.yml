@@ -26,12 +26,19 @@ mac:
     NSMicrophoneUsageDescription: Kladd tar opp det du sier mens du jobber, så loggen kan ta det med.
   # zip is required for electron-updater on macOS.
   target: [dmg, zip]
-  # The screen capture helper and PermissionFlow's resources, which it loads from beside itself.
+  # The capture helper and PermissionFlow's resources, which it loads from beside itself. Then the
+  # transcription helper and what it loads from beside itself (docs/internals/transcription.md).
   extraResources:
     - from: ../../packages/platform-darwin/native/.build/release/kladd-capture
       to: capture/kladd-capture
     - from: ../../packages/platform-darwin/native/.build/release/PermissionFlow_PermissionFlow.bundle
       to: capture/PermissionFlow_PermissionFlow.bundle
+    - from: ../../packages/platform-darwin/native/.build/release/kladd-transcribe
+      to: capture/kladd-transcribe
+    - from: ../../packages/platform-darwin/native/.build/release/swift-transformers_Hub.bundle
+      to: capture/swift-transformers_Hub.bundle
+    - from: ../../packages/platform-darwin/native/.build/release/libswiftCompatibilitySpan.dylib
+      to: capture/libswiftCompatibilitySpan.dylib
 publish:
   provider: github
   owner: Jazeel1101

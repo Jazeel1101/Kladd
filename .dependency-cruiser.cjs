@@ -203,7 +203,7 @@ module.exports = {
   ],
   options: {
     doNotFollow: { path: "node_modules" },
-    exclude: { path: "(^|/)(dist|release)/" },
+    exclude: { path: "(^|/)(dist|release|\\.build)/" },
     tsPreCompilationDeps: true,
     tsConfig: { fileName: "tsconfig.base.json" },
     combinedDependencies: false,
