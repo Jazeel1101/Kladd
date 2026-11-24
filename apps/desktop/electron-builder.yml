@@ -21,6 +21,9 @@ mac:
   # Only notarization needs the hardened runtime, and it breaks library loading without a Team ID.
   hardenedRuntime: false
   notarize: false
+  # The session helper records the microphone, as Kladd's child; macOS shows this when it asks.
+  extendInfo:
+    NSMicrophoneUsageDescription: Kladd tar opp det du sier mens du jobber, så loggen kan ta det med.
   # zip is required for electron-updater on macOS.
   target: [dmg, zip]
   # The screen capture helper and PermissionFlow's resources, which it loads from beside itself.
