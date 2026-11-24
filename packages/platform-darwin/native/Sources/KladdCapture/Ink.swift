@@ -135,10 +135,12 @@ func inkPath(_ points: [CGPoint], height: CGFloat) -> CGPath {
     self.timer = timer
   }
 
-  /// Writes the stroke being drawn, if any, and stops drawing.
+  /// Writes the stroke being drawn, if any, and takes the ink off the screen: the session goes on.
   func stop() {
     timer?.invalidate()
     if let stroke = input.finish() { finished(stroke) }
+    panel?.orderOut(nil)
+    panel = nil
   }
 
   private func style(_ layer: CAShapeLayer) {

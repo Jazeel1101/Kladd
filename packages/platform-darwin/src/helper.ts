@@ -1,5 +1,5 @@
 import { ScreenCaptureFailed, ScreenCapturePermissionDenied } from "@kladd/domain";
-import { Effect, Fiber, Option, Stream } from "effect";
+import { type Cause, Effect, Fiber, Option, Queue, Stream } from "effect";
 import { ChildProcess, type ChildProcessSpawner } from "effect/process";
 
 /** Where the kladd-capture helper is and what it should know about Kladd. apps/desktop fills it in. */
@@ -64,20 +64,23 @@ export const captureResult = (result: { stderr: string; exitCode: number }) =>
         );
 
 /**
- * Starts a long-running capture command (`record`, `session`, `clip`) and succeeds once it prints
+ * Starts a long-running capture command (`record`, `session`) and succeeds once it prints
  * "recording". `stop` sends SIGINT, which makes the helper finish its files, and waits for the exit.
- * Closing the scope without `stop` does the same and waits, but can't report a failure.
+ * Closing the scope without `stop` does the same and waits, but can't report a failure. `stdin` is
+ * written to the helper, and `lines` are what it prints after "recording", until it exits.
  */
 export const startCapture = Effect.fn("kladd-capture.start")(function* (
   spawner: ChildProcessSpawner.ChildProcessSpawner["Service"],
   helper: CaptureHelper,
   args: ReadonlyArray<string>,
+  stdin?: Stream.Stream<Uint8Array>,
 ) {
   const handle = yield* spawner
     .spawn(
       ChildProcess.make(helper.path, args, {
         killSignal: "SIGINT",
         forceKillAfter: "30 seconds",
+        ...(stdin === undefined ? {} : { stdin }),
       }),
     )
     .pipe(Effect.mapError(captureFailed));
@@ -89,12 +92,17 @@ export const startCapture = Effect.fn("kladd-capture.start")(function* (
     });
   });
 
-  const first = yield* handle.stdout.pipe(
+  const lines = yield* Queue.unbounded<string, Cause.Done>();
+  yield* handle.stdout.pipe(
     Stream.decodeText(),
     Stream.splitLines,
-    Stream.runHead,
-    Effect.mapError(captureFailed),
+    Stream.runForEach((line) => Queue.offer(lines, line)),
+    Effect.ignore,
+    Effect.ensuring(Queue.end(lines)),
+    Effect.forkScoped,
   );
+
+  const first = yield* Queue.take(lines).pipe(Effect.option);
   if (!Option.contains(first, "recording")) {
     // Anything else means the helper exited without recording.
     yield* exited;
@@ -111,5 +119,5 @@ export const startCapture = Effect.fn("kladd-capture.start")(function* (
     ),
     Effect.withSpan("kladd-capture.stop"),
   );
-  return { stop };
+  return { stop, lines: Stream.fromQueue(lines) };
 });

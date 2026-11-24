@@ -1,5 +1,5 @@
-// The privacy filter `session` takes keyframes through and `clip` records through: the main display
-// minus Kladd's windows and the excluded apps. ScreenCaptureKit only excludes apps that are running,
+// The privacy filter the session takes keyframes through and its clips record through: the main
+// display minus Kladd's windows and the excluded apps. ScreenCaptureKit only excludes apps that are running,
 // so the filter is rebuilt when one starts; until a filter that leaves it out is in use, `pending`.
 
 import AppKit
@@ -16,11 +16,11 @@ import ScreenCaptureKit
   /// An excluded app launched and the capture may still show it.
   private(set) var pending = false
   var stopped = false
-  /// Puts a new filter to use and calls `accepted` on the main queue once it is. By default at
-  /// once: screenshots read `filter` when they are taken.
-  var apply: (SCContentFilter, @escaping () -> Void) -> Void = { _, accepted in accepted() }
-  var onPending: () -> Void = {}
-  var onClear: () -> Void = {}
+  /// The clip recording through the filter: it gets each new filter, and holds its frames while
+  /// `pending`. Keyframes read `filter` when they are taken, so without a clip a filter is in use at once.
+  var video: ClipVideo? {
+    didSet { if pending { video?.hold() } }
+  }
 
   init(excludePid: pid_t?, excludedApps: Set<String>) {
     self.excludePid = excludePid
@@ -51,7 +51,7 @@ import ScreenCaptureKit
       MainActor.assumeIsolated {
         guard let self, self.excludedApps.contains(id) else { return }
         self.pending = true
-        self.onPending()
+        self.video?.hold()
         // Its first window can take a moment to be listed.
         for delay in [0.2, 1, 3] { DispatchQueue.main.asyncAfter(deadline: .now() + delay) { self.refresh() } }
       }
@@ -67,7 +67,8 @@ import ScreenCaptureKit
     Task { @MainActor in
       guard !stopped, let (filter, _) = try? await load() else { return }
       let filtered = filteredPids
-      apply(filter) { self.accepted(filtered: filtered) }
+      guard let video else { return accepted(filtered: filtered) }
+      video.update(filter) { self.accepted(filtered: filtered) }
     }
   }
 
@@ -76,7 +77,7 @@ import ScreenCaptureKit
   func accepted(filtered: Set<pid_t>) {
     guard pending, runningExcludedPids().isSubset(of: filtered) else { return }
     pending = false
-    onClear()
+    video?.release()
   }
 
   func runningExcludedPids() -> Set<pid_t> {

@@ -113,3 +113,45 @@ let step = CMTime(value: 1, timescale: videoFps)
   let paths = await MainActor.run { seen.1() }
   #expect(paths.contains(first.path) && paths.contains(second.path))
 }
+
+@Test func clipCommandsAreOneLineEach() {
+  #expect(ClipCommand("clip-start /tmp/a folder/clips/1") == .start(URL(fileURLWithPath: "/tmp/a folder/clips/1")))
+  #expect(ClipCommand("clip-stop") == .stop)
+  #expect(ClipCommand("clip-start relative/dir") == nil)
+  #expect(ClipCommand("clip-start ") == nil)
+  #expect(ClipCommand("clip-stop now") == nil)
+  #expect(ClipCommand("") == nil)
+}
+
+/// 10 ms of mono float PCM at 48 kHz, stamped `time`.
+func audioSample(at time: CMTime) -> CMSampleBuffer {
+  let format = AVAudioFormat(standardFormatWithSampleRate: 48_000, channels: 1)!
+  let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 480)!
+  buffer.frameLength = 480
+  var timing = CMSampleTimingInfo(
+    duration: CMTime(value: 1, timescale: 48_000), presentationTimeStamp: time, decodeTimeStamp: .invalid)
+  var sample: CMSampleBuffer?
+  CMSampleBufferCreate(
+    allocator: nil, dataBuffer: nil, dataReady: false, makeDataReadyCallback: nil, refcon: nil,
+    formatDescription: format.formatDescription, sampleCount: 480, sampleTimingEntryCount: 1,
+    sampleTimingArray: &timing, sampleSizeEntryCount: 0, sampleSizeArray: nil, sampleBufferOut: &sample)
+  CMSampleBufferSetDataBufferFromAudioBufferList(
+    sample!, blockBufferAllocator: nil, blockBufferMemoryAllocator: nil, flags: 0, bufferList: buffer.audioBufferList)
+  return sample!
+}
+
+/// A microphone granted 135 s into the clip: the silence before it used to be appended without
+/// waiting for the input, which raised NSInternalInconsistencyException and killed the helper.
+@Test func aLateMicrophoneIsPaddedFromZero() async throws {
+  let url = try tempDir().appendingPathComponent("audio.m4a")
+  let zero = CMTime(seconds: 1000, preferredTimescale: 48_000)
+  let writer = try AudioWriter(url: url, zero: zero, format: audioSample(at: zero).formatDescription!)
+  let late = zero + CMTime(seconds: 135, preferredTimescale: 48_000)
+  for index in 0..<100 {
+    writer.append(audioSample(at: late + CMTime(value: CMTimeValue(480 * index), timescale: 48_000)))
+  }
+  await withCheckedContinuation { done in writer.finish { done.resume() } }
+  #expect(!writer.failed)
+  let duration = try await AVURLAsset(url: url).load(.duration).seconds
+  #expect(abs(duration - 136) < 0.1)
+}

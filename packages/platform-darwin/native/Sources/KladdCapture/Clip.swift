@@ -1,11 +1,12 @@
-// `kladd-capture clip`: records one clip (klipp) into its folder until SIGINT, SIGTERM or stdin
-// closing: the main display as screen.mp4, the microphone as audio.m4a, and the student's ink as
-// marks.jsonl (Ink.swift). File names and line shapes are the contract in
+// One clip (klipp), recorded by the running `session` on `clip-start` until `clip-stop`
+// (Session.swift): the main display as screen.mp4, the microphone as audio.m4a, and the student's
+// ink as marks.jsonl (Ink.swift). File names and line shapes are the contract in
 // packages/domain/src/SessionFolder.ts; docs/internals/session-capture.md has the why.
 //
 // One clock: `t` is seconds since the first video frame, read from the host clock that
 // ScreenCaptureKit stamps frames with, so `t` is also the video's (and the audio's) timestamp.
-// Only the video must work; sound and ink log to stderr when they fail and the clip goes on.
+// Only the video must work; sound and ink log to stderr when they fail and the clip goes on. A clip
+// that fails never stops the session.
 
 import AppKit
 import AVFoundation
@@ -32,8 +33,8 @@ let videoRetryDelay: Double = 5
 /// A started stream sends a frame at once, even of a still screen. One that sent none by now is
 /// dropped and started again: ScreenCaptureKit can leave a start hanging without an error.
 let videoStartTimeout: Double = 3
-/// A stop before the first frame waits this long for it, then exits without a video.
-let firstFrameWait: Double = 10
+/// A clip whose files have not finished this long after its stop has failed.
+let clipFinishWait: Double = 30
 
 // MARK: - Video
 
@@ -44,6 +45,8 @@ final class ClipVideo: NSObject, SCStreamDelegate, SCStreamOutput {
   private var writer: AVAssetWriter?
   private var input: AVAssetWriterInput?
   private var lastTime = CMTime.invalid
+  /// The first frame's time: t = 0.
+  private var firstTime = CMTime.invalid
   /// Frames taken before this host time are not written: infinite from when an excluded app
   /// launches until the stream has accepted a filter without it.
   private var writeFrom = CMTime.zero
@@ -58,6 +61,8 @@ final class ClipVideo: NSObject, SCStreamDelegate, SCStreamOutput {
   var onFirstFrame: (CMTime) -> Void = { _ in }
   /// Called on the main queue when the stream stops on its own (display gone, capture error).
   var onStreamStopped: () -> Void = {}
+  /// Called on the main queue when screen.mp4 can't be written.
+  var onFailed: (String) -> Void = { _ in }
 
   init(url: URL) { self.url = url }
 
@@ -113,12 +118,19 @@ final class ClipVideo: NSObject, SCStreamDelegate, SCStreamOutput {
       else { return }
       onFirstFrame(time)
     }
-    // An invalid CMTime compares greater than every valid one, so the first frame needs its own case.
-    guard let input, input.isReadyForMoreMediaData, !lastTime.isValid || time > lastTime else { return }
-    if input.append(sampleBuffer) {
-      lastTime = time
-      lastFrame = sampleBuffer
+    guard let writer, let input else { return }
+    // The writer can fail on its own, between appends: the clip ends then, and the session goes on.
+    let failed = {
+      self.finished = true
+      let reason = "video failed at \((time - self.firstTime).seconds) s: \(String(describing: writer.error))"
+      DispatchQueue.main.async { self.onFailed(reason) }
     }
+    guard writer.status == .writing else { return failed() }
+    // An invalid CMTime compares greater than every valid one, so the first frame needs its own case.
+    guard input.isReadyForMoreMediaData, !lastTime.isValid || time > lastTime else { return }
+    guard input.append(sampleBuffer) else { return failed() }
+    lastTime = time
+    lastFrame = sampleBuffer
   }
 
   private func startWriter(width: Int, height: Int, at time: CMTime) -> Bool {
@@ -135,17 +147,22 @@ final class ClipVideo: NSObject, SCStreamDelegate, SCStreamOutput {
             AVVideoAverageBitRateKey: videoBitrate,
             AVVideoExpectedSourceFrameRateKey: videoFps,
             AVVideoMaxKeyFrameIntervalDurationKey: videoKeyFrameInterval,
+            // B-frames in a fragmented file failed the writer (-16341) right after its first fragment.
+            AVVideoAllowFrameReorderingKey: false,
           ],
         ])
       input.expectsMediaDataInRealTime = true
       writer.add(input)
       guard writer.startWriting() else { throw writer.error ?? Failure(message: "cannot start video") }
       writer.startSession(atSourceTime: time)
+      firstTime = time
       self.writer = writer
       self.input = input
       return true
     } catch {
-      fail("cannot write video: \(error)")
+      finished = true
+      DispatchQueue.main.async { self.onFailed("cannot write video: \(error)") }
+      return false
     }
   }
 
@@ -156,7 +173,14 @@ final class ClipVideo: NSObject, SCStreamDelegate, SCStreamOutput {
       self.current?.stopCapture { _ in }
       self.finished = true
       guard let writer = self.writer, writer.status == .writing else { return done(self.writer?.error) }
-      if let input = self.input, let last = self.lastFrame, end > self.lastTime, input.isReadyForMoreMediaData {
+      // The encoder can still be busy with the frame before: wait for it, briefly.
+      let deadline = Date().addingTimeInterval(1)
+      while let input = self.input, !input.isReadyForMoreMediaData, writer.status == .writing, Date() < deadline {
+        Thread.sleep(forTimeInterval: 0.01)
+      }
+      if let input = self.input, let last = self.lastFrame, end > self.lastTime, writer.status == .writing,
+        input.isReadyForMoreMediaData
+      {
         var timing = CMSampleTimingInfo(duration: .invalid, presentationTimeStamp: end, decodeTimeStamp: .invalid)
         var copy: CMSampleBuffer?
         CMSampleBufferCreateCopyWithNewTiming(
@@ -166,8 +190,9 @@ final class ClipVideo: NSObject, SCStreamDelegate, SCStreamOutput {
       }
       self.lastFrame = nil
       self.input?.markAsFinished()
-      // Ending at an invalid time (no frame was written) raises and aborts the helper.
-      if self.lastTime.isValid { writer.endSession(atSourceTime: self.lastTime) }
+      // Ending at an invalid time (no frame was written) raises and aborts the helper. The last
+      // frame is shown for one frame's time: a session that ends at it leaves it out.
+      if self.lastTime.isValid { writer.endSession(atSourceTime: self.lastTime + CMTime(value: 1, timescale: videoFps)) }
       writer.finishWriting { done(writer.status == .completed ? nil : writer.error) }
     }
   }
@@ -198,15 +223,119 @@ final class ClipVideo: NSObject, SCStreamDelegate, SCStreamOutput {
 
 // MARK: - Audio
 
-/// audio.m4a from the default microphone, starting at t = 0 (converted to the microphone's clock).
+/// audio.m4a, written from samples on the microphone's clock, from `zero` (t = 0 on that clock).
 /// A microphone that starts late is padded with silence: players ignore the empty edit
-/// AVAssetWriter would put there instead, which would shift speech against `t`.
+/// AVAssetWriter would put there instead, which would shift speech against `t`. Appending to an
+/// input that is not ready raises and kills the helper, so samples, and the silence before them,
+/// wait in `backlog` until it is. Not thread-safe: the audio queue only.
+final class AudioWriter {
+  private let writer: AVAssetWriter
+  private let input: AVAssetWriterInput
+  private let format: CMFormatDescription
+  /// Written up to here: the silence before a sample is what lies between this and its time.
+  private var written: CMTime
+  private var backlog: [CMSampleBuffer] = []
+  /// The writer gave up; nothing more is written.
+  private(set) var failed = false
+
+  init(url: URL, zero: CMTime, format: CMFormatDescription) throws {
+    writer = try AVAssetWriter(outputURL: url, fileType: .m4a)
+    writer.movieFragmentInterval = fragmentInterval
+    let rate = CMAudioFormatDescriptionGetStreamBasicDescription(format)?.pointee.mSampleRate ?? 48_000
+    input = AVAssetWriterInput(
+      mediaType: .audio,
+      outputSettings: [
+        AVFormatIDKey: kAudioFormatMPEG4AAC, AVNumberOfChannelsKey: 1, AVSampleRateKey: rate,
+        AVEncoderBitRateKey: audioBitrate,
+      ],
+      sourceFormatHint: format)
+    input.expectsMediaDataInRealTime = true
+    writer.add(input)
+    guard writer.startWriting() else { throw writer.error ?? Failure(message: "cannot start audio") }
+    writer.startSession(atSourceTime: zero)
+    self.format = format
+    written = zero
+  }
+
+  func append(_ sample: CMSampleBuffer) {
+    guard !failed else { return }
+    backlog.append(sample)
+    drain()
+  }
+
+  /// Appends silence and samples while the input takes them.
+  private func drain() {
+    while let next = backlog.first, !failed {
+      guard writer.status == .writing else { return giveUp() }
+      guard input.isReadyForMoreMediaData else { return }
+      let gap = next.presentationTimeStamp - written
+      if gap.seconds > 0.01, let pad = silence(from: written, duration: gap) {
+        guard input.append(pad) else { return giveUp() }
+        written = written + pad.duration
+        continue
+      }
+      backlog.removeFirst()
+      guard input.append(next) else { return giveUp() }
+      written = CMTimeMaximum(written, next.presentationTimeStamp + next.duration)
+    }
+  }
+
+  private func giveUp() {
+    failed = true
+    backlog = []
+    logError("audio failed: \(String(describing: writer.error))")
+  }
+
+  /// At most a second of silence: the encoder takes it at once, and real samples follow soon.
+  private func silence(from time: CMTime, duration: CMTime) -> CMSampleBuffer? {
+    let pcm = AVAudioFormat(cmAudioFormatDescription: format)
+    let frames = AVAudioFrameCount(min(duration.seconds, 1) * pcm.sampleRate)
+    guard frames > 0, let buffer = AVAudioPCMBuffer(pcmFormat: pcm, frameCapacity: frames) else { return nil }
+    buffer.frameLength = buffer.frameCapacity
+    for channel in UnsafeMutableAudioBufferListPointer(buffer.mutableAudioBufferList) {
+      if let data = channel.mData { memset(data, 0, Int(channel.mDataByteSize)) }
+    }
+    var timing = CMSampleTimingInfo(
+      duration: CMTime(value: 1, timescale: CMTimeScale(pcm.sampleRate)), presentationTimeStamp: time,
+      decodeTimeStamp: .invalid)
+    var sample: CMSampleBuffer?
+    guard
+      CMSampleBufferCreate(
+        allocator: nil, dataBuffer: nil, dataReady: false, makeDataReadyCallback: nil, refcon: nil,
+        formatDescription: format, sampleCount: CMItemCount(buffer.frameLength), sampleTimingEntryCount: 1,
+        sampleTimingArray: &timing, sampleSizeEntryCount: 0, sampleSizeArray: nil, sampleBufferOut: &sample)
+        == noErr, let sample,
+      CMSampleBufferSetDataBufferFromAudioBufferList(
+        sample, blockBufferAllocator: nil, blockBufferMemoryAllocator: nil, flags: 0,
+        bufferList: buffer.audioBufferList) == noErr
+    else { return nil }
+    return sample
+  }
+
+  /// Writes what is still waiting, for up to `wait` seconds, then finishes the file. Blocks.
+  func finish(wait: Double = 2, done: @escaping () -> Void) {
+    let deadline = Date().addingTimeInterval(wait)
+    drain()
+    while !backlog.isEmpty, !failed, Date() < deadline {
+      Thread.sleep(forTimeInterval: 0.01)
+      drain()
+    }
+    if !backlog.isEmpty { logError("audio: \(backlog.count) samples left out at stop") }
+    guard writer.status == .writing else { return done() }
+    input.markAsFinished()
+    writer.finishWriting {
+      if self.writer.status != .completed { logError("audio failed: \(String(describing: self.writer.error))") }
+      done()
+    }
+  }
+}
+
+/// The default microphone into an AudioWriter, from t = 0 converted to the microphone's clock.
 final class ClipAudio: NSObject, AVCaptureAudioDataOutputSampleBufferDelegate {
   private let url: URL
   private let capture = AVCaptureSession()
   private let queue = DispatchQueue(label: "kladd.clip.audio")
-  private var writer: AVAssetWriter?
-  private var input: AVAssetWriterInput?
+  private var writer: AudioWriter?
   private var start: CMTime?
   private var finished = false
 
@@ -238,87 +367,51 @@ final class ClipAudio: NSObject, AVCaptureAudioDataOutputSampleBufferDelegate {
       let zero = CMSyncConvertTime(start, from: CMClockGetHostTimeClock(), to: clock)
       // Samples from before t = 0.
       if sampleBuffer.presentationTimeStamp + sampleBuffer.duration <= zero { return }
-      startWriter(at: zero, format: format)
-      // In pieces of at most a minute: a microphone granted during the clip starts minutes late.
-      var padded = zero
-      while let input, (sampleBuffer.presentationTimeStamp - padded).seconds > 0.01,
-        let pad = silence(from: padded, duration: sampleBuffer.presentationTimeStamp - padded, format: format),
-        input.append(pad)
-      {
-        padded = padded + pad.duration
+      do {
+        writer = try AudioWriter(url: url, zero: zero, format: format)
+      } catch {
+        logError("cannot write audio: \(error)")
+        finished = true
+        return
       }
     }
-    guard let writer, writer.status == .writing, let input, input.isReadyForMoreMediaData else { return }
-    input.append(sampleBuffer)
-  }
-
-  private func silence(from time: CMTime, duration: CMTime, format: CMFormatDescription) -> CMSampleBuffer? {
-    let pcm = AVAudioFormat(cmAudioFormatDescription: format)
-    guard let buffer = AVAudioPCMBuffer(
-        pcmFormat: pcm, frameCapacity: AVAudioFrameCount(min(duration.seconds, 60) * pcm.sampleRate))
-    else { return nil }
-    buffer.frameLength = buffer.frameCapacity
-    for channel in UnsafeMutableAudioBufferListPointer(buffer.mutableAudioBufferList) {
-      if let data = channel.mData { memset(data, 0, Int(channel.mDataByteSize)) }
-    }
-    var timing = CMSampleTimingInfo(
-      duration: CMTime(value: 1, timescale: CMTimeScale(pcm.sampleRate)), presentationTimeStamp: time,
-      decodeTimeStamp: .invalid)
-    var sample: CMSampleBuffer?
-    guard
-      CMSampleBufferCreate(
-        allocator: nil, dataBuffer: nil, dataReady: false, makeDataReadyCallback: nil, refcon: nil,
-        formatDescription: format, sampleCount: CMItemCount(buffer.frameLength), sampleTimingEntryCount: 1,
-        sampleTimingArray: &timing, sampleSizeEntryCount: 0, sampleSizeArray: nil, sampleBufferOut: &sample)
-        == noErr, let sample,
-      CMSampleBufferSetDataBufferFromAudioBufferList(
-        sample, blockBufferAllocator: nil, blockBufferMemoryAllocator: nil, flags: 0,
-        bufferList: buffer.audioBufferList) == noErr
-    else { return nil }
-    return sample
-  }
-
-  private func startWriter(at time: CMTime, format: CMFormatDescription) {
-    do {
-      let writer = try AVAssetWriter(outputURL: url, fileType: .m4a)
-      writer.movieFragmentInterval = fragmentInterval
-      let rate = CMAudioFormatDescriptionGetStreamBasicDescription(format)?.pointee.mSampleRate ?? 48_000
-      let input = AVAssetWriterInput(
-        mediaType: .audio,
-        outputSettings: [
-          AVFormatIDKey: kAudioFormatMPEG4AAC, AVNumberOfChannelsKey: 1, AVSampleRateKey: rate,
-          AVEncoderBitRateKey: audioBitrate,
-        ],
-        sourceFormatHint: format)
-      input.expectsMediaDataInRealTime = true
-      writer.add(input)
-      guard writer.startWriting() else { throw writer.error ?? Failure(message: "cannot start audio") }
-      writer.startSession(atSourceTime: time)
-      self.writer = writer
-      self.input = input
-    } catch {
-      logError("cannot write audio: \(error)")
-      finished = true
-    }
+    writer?.append(sampleBuffer)
   }
 
   func finish(done: @escaping () -> Void) {
     capture.stopRunning()
     queue.async {
       self.finished = true
-      guard let writer = self.writer, writer.status == .writing else { return done() }
-      self.input?.markAsFinished()
-      writer.finishWriting {
-        if writer.status != .completed { logError("audio failed: \(String(describing: writer.error))") }
-        done()
-      }
+      guard let writer = self.writer else { return done() }
+      writer.finish(done: done)
     }
   }
 }
 
 // MARK: - Clip
 
-/// Runs on the main queue, apart from the video and audio callbacks.
+/// What the running session reads from stdin (Session.swift): one command per line.
+enum ClipCommand: Equatable {
+  /// `clip-start <folder>`: the folder exists and is absolute; the rest of the line, spaces and all.
+  case start(URL)
+  /// `clip-stop`: stops the clip that is starting or recording.
+  case stop
+
+  init?(_ line: String) {
+    if line == "clip-stop" {
+      self = .stop
+      return
+    }
+    let prefix = "clip-start "
+    guard line.hasPrefix(prefix) else { return nil }
+    let path = String(line.dropFirst(prefix.count))
+    guard path.hasPrefix("/") else { return nil }
+    self = .start(URL(fileURLWithPath: path))
+  }
+}
+
+/// Runs on the main queue, apart from the video and audio callbacks. Records through the session's
+/// privacy filter, and calls `ended` once, with nil when its files are done.
 @MainActor final class Clip {
   let privacy: PrivacyFilter
   let video: ClipVideo
@@ -326,16 +419,19 @@ final class ClipAudio: NSObject, AVCaptureAudioDataOutputSampleBufferDelegate {
   var audio: ClipAudio?
   let marks: LineWriter
   var ink: InkOverlay!
-  var timer: Timer?
+  let recording: () -> Void
+  let ended: (String?) -> Void
 
   var start: CMTime?
   /// Counts video starts: a pending one that is no longer the latest does nothing.
   var videoAttempt = 0
-  var stopRequested = false
   var stopping = false
+  var done = false
 
-  init(dir: URL, privacy: PrivacyFilter) {
+  init(dir: URL, privacy: PrivacyFilter, recording: @escaping () -> Void, ended: @escaping (String?) -> Void) {
     self.privacy = privacy
+    self.recording = recording
+    self.ended = ended
     video = ClipVideo(url: dir.appendingPathComponent("screen.mp4"))
     audioURL = dir.appendingPathComponent("audio.m4a")
     marks = LineWriter(dir.appendingPathComponent("marks.jsonl"))
@@ -359,33 +455,33 @@ final class ClipAudio: NSObject, AVCaptureAudioDataOutputSampleBufferDelegate {
     return (time - start).seconds
   }
 
-  func begin() async throws {
-    let (filter, display) = try await privacy.load()
-    privacy.apply = { [video] filter, accepted in video.update(filter, accepted: accepted) }
-    privacy.onPending = { [video] in video.hold() }
-    privacy.onClear = { [video] in video.release() }
-    privacy.watchLaunches()
+  /// Starts on the session's filter and display; without them (the Mac is locked) it fails.
+  func begin() {
+    guard let filter = privacy.filter, let display = privacy.display else {
+      return end("no display to capture")
+    }
+    privacy.video = video
     video.onStreamStopped = { [weak self] in self?.restartVideo(after: videoRestartDelay) }
     video.onFirstFrame = { time in DispatchQueue.main.async { self.started(at: time) } }
+    video.onFailed = { [weak self] reason in self?.stop(failure: reason) }
     audio?.run()
     watchVideo(videoAttempt)
-    do {
-      try await startVideo(filter: filter, display: display)
-    } catch {
-      logError("cannot start video: \(error)")
-      restartVideo(after: videoRetryDelay)
+    Task {
+      do {
+        try await startVideo(filter: filter, display: display)
+      } catch {
+        logError("cannot start video: \(error)")
+        restartVideo(after: videoRetryDelay)
+      }
     }
   }
 
   private func started(at time: CMTime) {
+    guard !stopping else { return }
     start = time
     audio?.begin(at: time)
     ink.start()
-    timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
-      MainActor.assumeIsolated { self?.privacy.check() }
-    }
-    say("recording")
-    if stopRequested { stop() }
+    recording()
   }
 
   func microphoneGranted() {
@@ -395,42 +491,39 @@ final class ClipAudio: NSObject, AVCaptureAudioDataOutputSampleBufferDelegate {
     if let start { audio.begin(at: start) }
   }
 
-  /// Finishes the ink, video and audio, and exits. Before the first frame it waits for it, so the
-  /// video is valid, but not forever: the stream may never work.
-  func stop() {
-    guard start != nil else {
-      if !stopRequested {
-        DispatchQueue.main.asyncAfter(deadline: .now() + firstFrameWait) {
-          if self.start == nil { fail("stopped before the first video frame") }
-        }
-      }
-      stopRequested = true
-      return
-    }
-    stopRequested = true
+  /// Finishes the ink, video and audio, then calls `ended`. A stop before the first frame ends
+  /// the clip without a video, as failed.
+  func stop(failure: String? = nil) {
     guard !stopping else { return }
     stopping = true
-    privacy.stopped = true
-    timer?.invalidate()
+    if privacy.video === video { privacy.video = nil }
     let end = hostNow()
     ink.stop()
+    let failure = failure ?? (start == nil ? "stopped before the first video frame" : nil)
 
-    let done = DispatchGroup()
+    let group = DispatchGroup()
     var videoError: Error?
-    done.enter()
+    group.enter()
     video.finish(at: end) { error in
       videoError = error
-      done.leave()
+      group.leave()
     }
     if let audio {
-      done.enter()
-      audio.finish { done.leave() }
+      group.enter()
+      audio.finish { group.leave() }
     }
-    done.notify(queue: .main) {
-      if let videoError { fail("video failed: \(videoError)") }
-      exit(0)
+    group.notify(queue: .main) {
+      self.end(failure ?? videoError.map { "video failed: \($0)" })
     }
-    DispatchQueue.main.asyncAfter(deadline: .now() + 30) { fail("clip did not finish") }
+    DispatchQueue.main.asyncAfter(deadline: .now() + clipFinishWait) { self.end("clip did not finish") }
+  }
+
+  private func end(_ failure: String?) {
+    guard !done else { return }
+    done = true
+    stopping = true
+    if privacy.video === video { privacy.video = nil }
+    ended(failure)
   }
 
   /// The video keeps going: a stream that stops on its own is started again into the same file.
@@ -443,8 +536,9 @@ final class ClipAudio: NSObject, AVCaptureAudioDataOutputSampleBufferDelegate {
       self.watchVideo(attempt)
       Task {
         do {
+          // Built again: the stream may have stopped because the display changed.
           let (filter, display) = try await self.privacy.load()
-          guard attempt == self.videoAttempt else { return }
+          guard attempt == self.videoAttempt, !self.stopping else { return }
           try await self.startVideo(filter: filter, display: display)
         } catch {
           guard attempt == self.videoAttempt else { return }
@@ -469,24 +563,5 @@ final class ClipAudio: NSObject, AVCaptureAudioDataOutputSampleBufferDelegate {
       logError("video sent no frame; starting it again")
       self.restartVideo(after: 0)
     }
-  }
-}
-
-var clip: Clip?
-
-@MainActor func runClip(_ args: [String]) async {
-  guard let dir = option("--dir", in: args) else { fail("clip needs --dir <folder>", code: exitUsage) }
-  requireGranted()
-  let current = Clip(
-    dir: URL(fileURLWithPath: dir),
-    privacy: PrivacyFilter(
-      excludePid: option("--exclude-pid", in: args).flatMap { pid_t($0) },
-      excludedApps: Set(stringList("--exclude-apps", in: args))))
-  clip = current
-  stopOn { current.stop() }
-  do {
-    try await current.begin()
-  } catch {
-    fail(String(describing: error))
   }
 }

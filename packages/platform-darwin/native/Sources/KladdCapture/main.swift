@@ -8,10 +8,11 @@
 //   kladd-capture record --out <file.mov> [--exclude-pid pid]
 //       prints "recording" once frames are written; stops on SIGINT, SIGTERM or stdin closing.
 //   kladd-capture session --dir <folder> [--exclude-pid pid] [--exclude-apps json] [--deny-paths json]
-//       writes a session folder's live files (Session.swift); prints and stops like record.
-//   kladd-capture clip --dir <clip folder> [--exclude-pid pid] [--exclude-apps json]
-//       records a clip's screen.mp4, audio.m4a and marks.jsonl, with ink (Clip.swift); prints and
-//       stops like record.
+//       writes a session folder's live files (Session.swift); prints and stops like record. It also
+//       records clips (Clip.swift), the only other ScreenCaptureKit user then, on stdin lines:
+//         clip-start <clip folder>   answers "clip-recording" at the first frame, then one of the two below
+//         clip-stop                  answers "clip-stopped" once the files are done, or
+//                                    "clip-failed <reason>" (also instead of "clip-recording")
 //   kladd-capture accessibility-status                    Accessibility: prints "granted" or "denied"
 //   kladd-capture accessibility-request --app <Kladd.app> [--timeout s]
 //   kladd-capture focus [--exclude-pid pid]               prints a FocusSnapshot as JSON (Focus.swift)
@@ -44,9 +45,10 @@ func fail(_ message: String, code: Int32 = 1) -> Never {
 
 var signalSources: [DispatchSourceSignal] = []
 
-/// Calls `stop` on the main queue on SIGINT, SIGTERM or stdin closing. Stdin closing means Kladd
-/// went away: a long-running command then finishes its files rather than leave them cut off.
-func stopOn(_ stop: @escaping () -> Void) {
+/// Calls `stop` on the main queue on SIGINT, SIGTERM or stdin closing, and `commands` there with
+/// each line read before. Stdin closing means Kladd went away: a long-running command then finishes
+/// its files rather than leave them cut off.
+func stopOn(_ stop: @escaping () -> Void, commands: @escaping @MainActor (String) -> Void = { _ in }) {
   for sig in [SIGINT, SIGTERM] {
     signal(sig, SIG_IGN)
     let source = DispatchSource.makeSignalSource(signal: sig, queue: .main)
@@ -55,7 +57,9 @@ func stopOn(_ stop: @escaping () -> Void) {
     signalSources.append(source)
   }
   Thread.detachNewThread {
-    while readLine() != nil {}
+    while let line = readLine() {
+      DispatchQueue.main.async { MainActor.assumeIsolated { commands(line) } }
+    }
     DispatchQueue.main.async(execute: stop)
   }
 }
@@ -298,12 +302,10 @@ Task { @MainActor in
     await runRecord(args)
   case "session":
     await runSession(args)
-  case "clip":
-    await runClip(args)
   default:
     fail(
       "usage: kladd-capture status | request --app <path> | screenshot --out <file> | record --out <file>"
-        + " | session --dir <folder> | clip --dir <folder>"
+        + " | session --dir <folder>"
         + " | accessibility-status | accessibility-request --app <path> | focus [--exclude-pid pid]"
         + " | watch-focus [--exclude-pid pid]",
       code: exitUsage)

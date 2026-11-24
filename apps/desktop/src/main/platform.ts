@@ -1,7 +1,6 @@
 import { join, resolve } from "node:path";
 import { ClipCapture, FocusTracker, ScreenCapture, SessionCapture, Transcriber } from "@kladd/core";
 import {
-  ClipCaptureDarwin,
   FocusTrackerDarwin,
   ScreenCaptureDarwin,
   SessionCaptureDarwin,
@@ -44,8 +43,8 @@ export const PlatformLive = Layer.unwrap(
     return Layer.mergeAll(
       ScreenCaptureDarwin(helper),
       FocusTrackerDarwin(helper),
+      // Clips are recorded by the session's helper, so one layer provides both.
       SessionCaptureDarwin(helper),
-      ClipCaptureDarwin(helper),
       // The Whisper model is downloaded once and shared by every recording.
       TranscriberDarwin(helper, join(app.getPath("userData"), "models")),
     );

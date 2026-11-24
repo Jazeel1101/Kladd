@@ -1,9 +1,10 @@
 // `kladd-capture session`: writes the live files of a session folder (opptaksmappe) until SIGINT,
-// SIGTERM or stdin closing. File names and line shapes are the contract in
-// packages/domain/src/SessionFolder.ts; docs/internals/session-capture.md has the why.
+// SIGTERM or stdin closing, and records clips (Clip.swift) on the commands it reads from stdin.
+// File names and line shapes are the contract in packages/domain/src/SessionFolder.ts;
+// docs/internals/session-capture.md has the why, main.swift the commands and answers.
 //
 // `t` is seconds since the `start` event. Every part is best effort: a part that fails logs to
-// stderr and the rest go on. Video and sound are clips' (Clip.swift), not the session's.
+// stderr and the rest go on. Video and sound are clips', not the session's.
 
 import AppKit
 import CoreMedia
@@ -174,6 +175,10 @@ func secureFieldFocused(_ app: NSRunningApplication) -> Bool {
   var idle = false
   var keys: UInt32 = 0
   var clicks: UInt32 = 0
+  /// The clip starting or recording; one at a time.
+  var clip: Clip?
+  /// Called once the clip has ended: the session's stop waits for it.
+  var clipEnded: (() -> Void)?
 
   let ocrQueue = DispatchQueue(label: "kladd.session.ocr", qos: .utility)
   let ocrJobs = DispatchGroup()
@@ -223,7 +228,38 @@ func secureFieldFocused(_ app: NSRunningApplication) -> Bool {
     if stopRequested { stop() }
   }
 
-  /// Writes `stop`, then finishes file watching and OCR, and exits.
+  // MARK: Clips
+
+  /// One line from stdin. Answers `clip-recording` once a clip has its first frame, then
+  /// `clip-stopped` or `clip-failed <reason>` once it has ended; a clip that ends before its first
+  /// frame answers only `clip-failed`.
+  func command(_ line: String) {
+    guard let command = ClipCommand(line) else { return logError("unknown command: \(line)") }
+    switch command {
+    case .start(let dir):
+      guard !stopping else { return say("clip-failed the session is stopping") }
+      // The caller waits for a clip's end before it starts the next one.
+      guard clip == nil else { return logError("a clip is already recording; ignored \(line)") }
+      let started = Clip(
+        dir: dir, privacy: privacy, recording: { say("clip-recording") },
+        ended: { [weak self] failure in self?.ended(clip: failure) })
+      clip = started
+      started.begin()
+    case .stop:
+      guard let clip else { return logError("no clip to stop") }
+      clip.stop()
+    }
+  }
+
+  private func ended(clip failure: String?) {
+    if let failure { logError("clip failed: \(failure)") }
+    say(failure.map { "clip-failed \($0)" } ?? "clip-stopped")
+    clip = nil
+    clipEnded?()
+    clipEnded = nil
+  }
+
+  /// Writes `stop`, then finishes the clip, file watching and OCR, and exits.
   func stop() {
     stopRequested = true
     guard start != nil, !stopping else { return }
@@ -237,6 +273,11 @@ func secureFieldFocused(_ app: NSRunningApplication) -> Bool {
     timeline.write(["type": "stop", "t": seconds(t(end)), "at": iso(Date())])
 
     let done = DispatchGroup()
+    if let clip {
+      done.enter()
+      clipEnded = { done.leave() }
+      clip.stop()
+    }
     if let watcher {
       done.enter()
       watcher.stop { done.leave() }
@@ -387,7 +428,7 @@ var session: Session?
       excludePid: option("--exclude-pid", in: args).flatMap { pid_t($0) },
       excludedApps: Set(stringList("--exclude-apps", in: args))))
   session = current
-  stopOn { current.stop() }
+  stopOn({ current.stop() }, commands: { current.command($0) })
   // The folder is <dataDir>/recordings/<session>: Kladd's own writes are not the student's work.
   let dataDir = URL(fileURLWithPath: dir).standardized.deletingLastPathComponent().deletingLastPathComponent()
   await current.begin(deniedPaths: stringList("--deny-paths", in: args) + [dataDir.path + "/"])
