@@ -57,10 +57,17 @@ const windowTable: Record<WindowKind, WindowSpec> = {
     noShadow: true,
     clickThrough: true,
     onTop: true,
-    // Docked on the left screen edge, four fifths down.
+    // Docked on the left screen edge, four fifths down, and kept inside the work area as the pill
+    // keeps it when it moves it (frameAt in apps/ui/src/pill/notchPlacement.ts): the pill reads its
+    // place from where the window starts.
     position: (size, area) => ({
       x: area.x,
-      y: Math.round(area.y + area.height * 0.8 - size.height / 2),
+      y: Math.round(
+        Math.min(
+          Math.max(area.y + area.height * 0.8 - size.height / 2, area.y),
+          area.y + area.height - size.height,
+        ),
+      ),
     }),
   },
   zones: {
