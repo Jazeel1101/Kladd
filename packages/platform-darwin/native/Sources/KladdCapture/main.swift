@@ -15,7 +15,9 @@
 
 import AppKit
 import CoreGraphics
+#if KLADD_PERMISSIONFLOW
 import PermissionFlow
+#endif
 import ScreenCaptureKit
 import UniformTypeIdentifiers
 
@@ -66,8 +68,37 @@ func pixelConfiguration(for display: SCDisplay) -> SCStreamConfiguration {
 
 // MARK: - Permission
 
+enum PermissionPane { case screenRecording, accessibility }
+
+#if KLADD_PERMISSIONFLOW
+/// Opens System Settings on `pane` with PermissionFlow's panel to drag Kladd.app in. Returns how to close it.
+@MainActor func showPermissionGuide(_ pane: PermissionPane, app: URL) -> () -> Void {
+  let controller = PermissionFlow.makeController()
+  controller.authorize(
+    pane: pane == .screenRecording ? .screenRecording : .accessibility, suggestedAppURLs: [app])
+  return { controller.closePanel() }
+}
+#else
+/// Built without PermissionFlow (no Xcode): the system prompt, then System Settings on `pane`.
+@MainActor func showPermissionGuide(_ pane: PermissionPane, app: URL) -> () -> Void {
+  let anchor: String
+  switch pane {
+  case .screenRecording:
+    _ = CGRequestScreenCaptureAccess()
+    anchor = "Privacy_ScreenCapture"
+  case .accessibility:
+    _ = AXIsProcessTrustedWithOptions(["AXTrustedCheckOptionPrompt": true] as CFDictionary)
+    anchor = "Privacy_Accessibility"
+  }
+  if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?\(anchor)") {
+    NSWorkspace.shared.open(url)
+  }
+  return {}
+}
+#endif
+
 /// Guides the user through granting `pane` in System Settings; `granted` reads the permission.
-@MainActor func runRequest(_ args: [String], pane: PermissionFlowPane, granted: @escaping () -> Bool) {
+@MainActor func runRequest(_ args: [String], pane: PermissionPane, granted: @escaping () -> Bool) {
   if granted() {
     say("granted")
     exit(0)
@@ -75,14 +106,13 @@ func pixelConfiguration(for display: SCDisplay) -> SCStreamConfiguration {
   guard let appPath = option("--app", in: args) else { fail("request needs --app <path to .app>", code: exitUsage) }
   let timeout = option("--timeout", in: args).flatMap(Double.init) ?? 300
 
-  let controller = PermissionFlow.makeController()
-  controller.authorize(pane: pane, suggestedAppURLs: [URL(fileURLWithPath: appPath)])
+  let closeGuide = showPermissionGuide(pane, app: URL(fileURLWithPath: appPath))
 
   var finished = false
   let finish: @MainActor () -> Void = {
     guard !finished else { return }
     finished = true
-    controller.closePanel()
+    closeGuide()
     say(granted() ? "granted" : "denied")
     exit(0)
   }
@@ -229,7 +259,7 @@ func runRecord(_ args: [String]) async {
 
 let args = Array(CommandLine.arguments.dropFirst())
 let app = NSApplication.shared
-// No Dock icon: PermissionFlow's floating panel is the only UI.
+// No Dock icon: PermissionFlow's floating panel (when built with it) is the only UI.
 app.setActivationPolicy(.accessory)
 
 Task { @MainActor in

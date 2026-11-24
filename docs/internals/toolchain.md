@@ -9,3 +9,4 @@ Things that look like mistakes but aren't.
 - **`electron-updater` has a plain version range, not `catalog:`**, because electron-builder can't read catalog specifiers.
 - **A window is picked by the URL hash.** Every window loads the same `index.html` with its `WindowKind` as the hash (`#pill`), and `apps/ui/src/main.tsx` renders that window. A hash, not a path, because production loads from `file://`.
 - **`import.meta.glob` negation must be relative** (`"!./apps/*.test.ts"`). Rolldown (`vp pack`) ignores `"!**/..."` and would bundle test files and vitest into the app; vitest accepts both. Used in `packages/adapters/src/index.ts`.
+- **PermissionFlow is left out of the Swift helper without Xcode.** In the macOS 27 SDK SwiftUI's `@State` is a macro, and its plugin ships only with Xcode, not Command Line Tools. `packages/platform-darwin/native/build.sh` detects this; `docs/internals/screen-capture.md` has the details.
