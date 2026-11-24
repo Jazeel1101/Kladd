@@ -36,8 +36,11 @@ export class KladdRpcs extends RpcGroup.make(
   }),
   /** The flight window's screenshot has dropped into the pill. */
   Rpc.make("LandScreenshot", { payload: { id: ScreenshotId } }),
-  /** Where the pill's notch is on screen, once it comes to rest: ⌃⇧C screenshots fly into it. */
-  Rpc.make("SetPillNotch", { payload: { notch: Rect } }),
+  /**
+   * Where a ⌃⇧C screenshot lands in the pill once it opens to take it in, in screen points. The
+   * pill sends it whenever it comes to rest.
+   */
+  Rpc.make("SetScreenshotSlot", { payload: { slot: Rect } }),
   Rpc.make("ShowWindow", { payload: { kind: OpenableWindow } }),
   Rpc.make("HideWindow", { payload: { kind: ClosableWindow } }),
   /** Moves the pill window's top-left corner to `position` at once: the UI is dragging the pill. */

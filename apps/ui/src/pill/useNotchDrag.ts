@@ -7,7 +7,8 @@ import {
   type PointerEvent,
 } from "react";
 import { hideWindowAtom, showWindowAtom } from "../windows/atoms";
-import { movePillAtom, setClickThroughAtom, setPillNotchAtom } from "./atoms";
+import { movePillAtom, setClickThroughAtom, setScreenshotSlotAtom } from "./atoms";
+import { screenshotSlot } from "./intake";
 import {
   clampCenter,
   frameAt,
@@ -66,14 +67,14 @@ const startFrame = (): NotchFrame => {
  * also mid-drag; a docked one keeps the layout its wall gives it.
  * `liquid` says how the wall's liquid looks now (src/pill/wallLiquid.ts).
  * Also keeps clicks passing through the window everywhere but the notch (`data-notch-hit`), and
- * tells main where the notch rests, so ⌃⇧C screenshots fly into it.
+ * tells main where ⌃⇧C screenshots land in it once it rests.
  */
 export const useNotchDrag = () => {
   const movePill = useAtomSet(movePillAtom);
   const setClickThrough = useAtomSet(setClickThroughAtom);
   const showWindow = useAtomSet(showWindowAtom);
   const hideWindow = useAtomSet(hideWindowAtom);
-  const setPillNotch = useAtomSet(setPillNotchAtom);
+  const setScreenshotSlot = useAtomSet(setScreenshotSlotAtom);
   const [frame, setFrame] = useState<NotchFrame>(startFrame);
   const [moving, setMoving] = useState(false);
   const [liquid, setLiquid] = useState<Liquid>(() => dockedLiquid("left"));
@@ -260,13 +261,8 @@ export const useNotchDrag = () => {
   // Only at rest: while it moves, the frame changes every frame.
   useEffect(() => {
     if (moving) return;
-    const { window: at, box } = frame;
-    setPillNotch({
-      payload: {
-        notch: { x: at.x + box.left, y: at.y + box.top, width: box.width, height: box.height },
-      },
-    });
-  }, [frame, moving, setPillNotch]);
+    setScreenshotSlot({ payload: { slot: screenshotSlot(frame) } });
+  }, [frame, moving, setScreenshotSlot]);
 
   const view = viewLiquid(liquid, frame, performance.now());
   // The liquid also moves on its own (sinking back, the pull ramping in): redraw until it settles.

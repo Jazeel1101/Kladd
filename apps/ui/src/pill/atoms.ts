@@ -6,5 +6,5 @@ export const openMenuAtom = KladdClient.mutation("OpenPillMenu");
 export const movePillAtom = KladdClient.mutation("MovePill");
 /** Lets clicks through the pill window's empty space. Use with `{ payload: { clickThrough } }`. */
 export const setClickThroughAtom = KladdClient.mutation("SetPillClickThrough");
-/** Tells main where the notch rests on screen, for ⌃⇧C screenshots to fly into. Use with `{ payload: { notch } }`. */
-export const setPillNotchAtom = KladdClient.mutation("SetPillNotch");
+/** Tells main where ⌃⇧C screenshots land in the open pill. Use with `{ payload: { slot } }`. */
+export const setScreenshotSlotAtom = KladdClient.mutation("SetScreenshotSlot");

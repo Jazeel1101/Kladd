@@ -10,7 +10,9 @@ import { showWindowAtom } from "../windows/atoms";
 import { openMenuAtom } from "./atoms";
 import type { Orientation, Wall } from "./notchPlacement";
 import { attractRange, canvas, dropParts, dropPath } from "./notchShape";
+import { openPath } from "./intake";
 import { useNotchDrag } from "./useNotchDrag";
+import { useScreenshotIntake } from "./useScreenshotIntake";
 
 const formatElapsed = (duration: Duration.Duration): string => {
   // Clamped: the first render after a start can read a clock from before it.
@@ -165,8 +167,9 @@ const RecordIndicator = ({ recording }: { readonly recording: boolean }) => (
 /**
  * RecordingPill: Kladd's only presence, a notch of liquid docked on a screen edge (a column on the
  * sides, a row on the bottom) or floating. Holds the expanded view, the recording indicator
- * and screenshot. Drag it to move it: it is a plain pill in the open, an edge pulls it in when it
- * comes close, and a ghost shows where it will dock. Right-click opens the menu.
+ * and screenshot, and opens to take in a ⌃⇧C screenshot (src/pill/intake.ts). Drag it to move it:
+ * it is a plain pill in the open, an edge pulls it in when it comes close, and a ghost shows where
+ * it will dock. Right-click opens the menu.
  */
 export const RecordingPill = () => {
   const recording = useAtomValue(recordingAtom);
@@ -177,10 +180,13 @@ export const RecordingPill = () => {
   const { frame, moving, liquid, turns, handlers } = useNotchDrag();
   const { box, drawWall, orientation } = frame;
 
-  const resting = useMemo(
-    () => restingVars(frame.wall !== null, frame.along),
-    [frame.wall, frame.along],
-  );
+  const intake = useScreenshotIntake(frame);
+  const resting = useMemo(() => {
+    if (!intake.open) return restingVars(frame.wall !== null, frame.along);
+    // Open to take in a screenshot: it stays open under the pointer too.
+    const open = path(openPath(frame.wall !== null, frame.along));
+    return { "--drop-rest": open, "--drop-hover": open, "--drop-press": open };
+  }, [intake.open, frame.wall, frame.along]);
   // While it moves, the wall's liquid and the pill are drawn apart: in a corner the pill tilts and
   // the wall's liquid doesn't, and once the pill leaves the wall only the pill follows it.
   const parts = dropParts({
@@ -202,6 +208,7 @@ export const RecordingPill = () => {
       className={cn(
         "notch pointer-events-none relative h-screen w-screen touch-none select-none",
         moving && "live",
+        intake.closing && "closing",
       )}
       {...handlers}
       onContextMenu={(event) => {
@@ -300,6 +307,7 @@ export const RecordingPill = () => {
             <ScreenshotIcon />
           </NotchButton>
         </div>
+        {intake.thumbnail}
       </div>
     </div>
   );

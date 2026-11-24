@@ -1,5 +1,7 @@
 import { assert, describe, it } from "@effect/vitest";
-import { Effect, Layer, Option, Ref, Stream } from "effect";
+import { Effect, Fiber, Layer, Option, Ref, Stream } from "effect";
+import { TestClock } from "effect/testing";
+import type { ScreenshotId } from "@kladd/domain";
 import type { ScreenCapture } from "../ports/ScreenCapture";
 import {
   IdsTest,
@@ -29,24 +31,32 @@ const shownWindows = Effect.gen(function* () {
 });
 
 const display = { x: 0, y: 0, width: 1440, height: 900 };
-/** A column notch docked on the left wall, as the pill reports it. */
-const notch = { x: 0, y: 600, width: 46, height: 130 };
+/** The slot of a pill docked on the left wall, as the pill reports it. */
+const slot = { x: 46, y: 608, width: 118, height: 114 };
 
-/** Takes a screenshot once the pill has reported its notch. */
+/** Takes a screenshot once the pill has reported its slot. */
 const takeAimed = Effect.gen(function* () {
   const screenshots = yield* Screenshots;
-  yield* screenshots.aimAt(notch);
+  yield* screenshots.aimAt(slot);
   return yield* screenshots.take;
 });
 
+/** Lands a screenshot, waiting out the moment main gives the pill to draw it. */
+const land = Effect.fn("test.land")(function* (id: ScreenshotId) {
+  const screenshots = yield* Screenshots;
+  const landing = yield* Effect.forkChild(screenshots.land(id));
+  yield* TestClock.adjust("1 second");
+  yield* Fiber.join(landing);
+});
+
 describe("Screenshots.take", () => {
-  it.effect("flies the screenshot from the whole display into the pill's notch", () =>
+  it.effect("flies the screenshot from the whole display into the pill's slot", () =>
     Effect.gen(function* () {
       const screenshot = yield* takeAimed;
       assert.deepStrictEqual((yield* tray)?.flying, {
         screenshot,
         from: display,
-        to: { x: 0, y: 651, width: 46, height: 29 },
+        to: { x: 46, y: 628, width: 118, height: 74 },
       });
       assert.deepStrictEqual(screenshot.display, display);
       // Only the flight window: the logging overlay stays as it was.
@@ -98,9 +108,8 @@ describe("Screenshots.take", () => {
 describe("Screenshots.land", () => {
   it.effect("attaches the screenshot in flight and hides the flight window", () =>
     Effect.gen(function* () {
-      const screenshots = yield* Screenshots;
       const screenshot = yield* takeAimed;
-      yield* screenshots.land(screenshot.id);
+      yield* land(screenshot.id);
       assert.deepStrictEqual(yield* tray, { flying: null, attached: [screenshot] });
       assert.deepStrictEqual(yield* Ref.get(yield* OverlayWindowsLog), [
         { kind: "flight", bounds: display },
@@ -111,11 +120,10 @@ describe("Screenshots.land", () => {
 
   it.effect("moves the screenshot in flight to the front of the attached ones", () =>
     Effect.gen(function* () {
-      const screenshots = yield* Screenshots;
       const first = yield* takeAimed;
-      yield* screenshots.land(first.id);
+      yield* land(first.id);
       const second = yield* takeAimed;
-      yield* screenshots.land(second.id);
+      yield* land(second.id);
       const now = yield* tray;
       assert.isNull(now?.flying);
       assert.deepStrictEqual(
@@ -127,11 +135,10 @@ describe("Screenshots.land", () => {
 
   it.effect("ignores an older flight, and leaves the window to the newer one", () =>
     Effect.gen(function* () {
-      const screenshots = yield* Screenshots;
       const first = yield* takeAimed;
       const second = yield* takeAimed;
       // The first flight finishes after the second has started.
-      yield* screenshots.land(first.id);
+      yield* land(first.id);
       const now = yield* tray;
       assert.strictEqual(now?.flying?.screenshot.id, second.id);
       assert.strictEqual(now?.attached.length, 1);

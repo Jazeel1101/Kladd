@@ -9,9 +9,12 @@ import { type Spring, springTiming } from "./spring";
 /** A held beat after the flash, so the user sees what was captured before it flies. */
 const HOLD = 120;
 const FLASH = 260;
-/** The drop into the pill. It starts before the springs settle, while the screenshot still moves. */
-const ABSORB = 240;
-const ABSORB_OVERLAP = 160;
+/**
+ * How long the landed screenshot stays in this window. Main hides the window sooner, once the pill
+ * shows its own copy underneath (`Screenshots.land`); clearing it after that leaves the hidden
+ * window empty, so its next flight doesn't open on this one.
+ */
+const CLEAR = 400;
 
 // Horizontal and vertical travel on different springs, so the screenshot arcs instead of sliding
 // in a straight line. Scale settles with a small overshoot, so it arrives with a little give.
@@ -24,16 +27,16 @@ interface Parts {
   readonly dim: HTMLDivElement;
   readonly x: HTMLDivElement;
   readonly card: HTMLDivElement;
-  readonly body: HTMLDivElement;
 }
 
 /**
- * Plays one flight and calls `done` once the screenshot has dropped into the pill. Returns a
+ * Plays one flight and calls `done` once the screenshot rests in the open pill's slot. Returns a
  * function that stops it.
  *
  * Every animation here is translate, scale or opacity, which the compositor runs on the GPU without
  * repainting the full-resolution screenshot. Radius, shadow or anything else that repaints drops
  * frames at this size, and runs Chromium out of tile memory, so parts of the screenshot don't draw.
+ * The pill rounds its corners once it holds it (src/pill/useScreenshotIntake.tsx).
  */
 const fly = (parts: Parts, flight: Flight, done: () => void) => {
   const { from, to } = flight;
@@ -42,7 +45,6 @@ const fly = (parts: Parts, flight: Flight, done: () => void) => {
   const y = springTiming(travelY);
   const s = springTiming(shrink);
   const travel = Math.max(x.duration, y.duration, s.duration);
-  const absorbAt = HOLD + travel - ABSORB_OVERLAP;
   const fill = "both" as const;
 
   const animations = [
@@ -52,7 +54,7 @@ const fly = (parts: Parts, flight: Flight, done: () => void) => {
     }),
     // The screen behind dims a little while the screenshot is lifted off it.
     parts.dim.animate([{ opacity: 0 }, { opacity: 0.16, offset: 0.15 }, { opacity: 0 }], {
-      duration: absorbAt,
+      duration: HOLD + travel,
       easing: "ease-out",
       fill,
     }),
@@ -67,14 +69,6 @@ const fly = (parts: Parts, flight: Flight, done: () => void) => {
       fill,
     }),
     parts.card.animate([{ scale: "1" }, { scale: String(scale) }], { ...s, delay: HOLD, fill }),
-    // Into the pill: shrinks about its own centre and fades, as if it went in.
-    parts.body.animate(
-      [
-        { scale: "1", opacity: 1 },
-        { scale: "0.25", opacity: 0 },
-      ],
-      { duration: ABSORB, delay: absorbAt, easing: "cubic-bezier(0.55, 0, 0.75, 0)", fill },
-    ),
   ];
 
   let stopped = false;
@@ -100,8 +94,8 @@ const afterNextPaint = (f: () => void) => {
 
 /**
  * ScreenshotFlight: a click-through window over the whole display. A new screenshot starts covering
- * the screen exactly, so the screen seems to freeze, then flashes, lifts and springs onto the pill
- * (a shared element transition), and drops into it. The pill itself doesn't change. How it fits
+ * the screen exactly, so the screen seems to freeze, then flashes, lifts and springs into the slot
+ * the pill opens for it (a shared element transition), where the pill takes over. How it fits
  * together: docs/internals/screenshot-flight.md.
  */
 export const ScreenshotFlight = () => {
@@ -116,29 +110,23 @@ export const ScreenshotFlight = () => {
   const dim = useRef<HTMLDivElement>(null);
   const x = useRef<HTMLDivElement>(null);
   const card = useRef<HTMLDivElement>(null);
-  const body = useRef<HTMLDivElement>(null);
   const image = useRef<HTMLImageElement>(null);
 
   useEffect(() => {
-    const [f, d, xe, c, b, img] = [
-      flash.current,
-      dim.current,
-      x.current,
-      card.current,
-      body.current,
-      image.current,
-    ];
+    const [f, d, xe, c, img] = [flash.current, dim.current, x.current, card.current, image.current];
     if (flight === null || f === null || d === null || xe === null || c === null) return;
-    if (b === null || img === null) return;
+    if (img === null) return;
 
     const { id } = flight.screenshot;
+    let clear: ReturnType<typeof setTimeout> | undefined;
     const finish = () => {
-      c.style.visibility = "hidden";
       // Main attaches it and hides this window, unless a newer screenshot is already flying.
       land({ payload: { id } });
+      clear = setTimeout(() => (c.style.visibility = "hidden"), CLEAR);
     };
     if (reducedMotion()) {
-      finish();
+      c.style.visibility = "hidden";
+      land({ payload: { id } });
       return;
     }
 
@@ -153,13 +141,18 @@ export const ScreenshotFlight = () => {
         if (cancelled) return;
         c.style.visibility = "visible";
         stop = afterNextPaint(() => {
-          stop = fly({ flash: f, dim: d, x: xe, card: c, body: b }, flight, finish);
+          stop = fly({ flash: f, dim: d, x: xe, card: c }, flight, finish);
         });
       },
-      () => cancelled || finish(),
+      () => {
+        if (cancelled) return;
+        c.style.visibility = "hidden";
+        land({ payload: { id } });
+      },
     );
     return () => {
       cancelled = true;
+      clearTimeout(clear);
       stop();
     };
   }, [flight, land]);
@@ -175,9 +168,12 @@ export const ScreenshotFlight = () => {
           style={{ width: from?.width ?? 0, height: from?.height ?? 0 }}
         >
           {/* The one big layer: rastered once at full size, then only moved and scaled. */}
-          <div ref={body} className="size-full origin-center will-change-transform">
-            <img ref={image} alt="" className="block size-full" draggable={false} />
-          </div>
+          <img
+            ref={image}
+            alt=""
+            className="block size-full will-change-transform"
+            draggable={false}
+          />
         </div>
       </div>
       <div ref={flash} className="absolute inset-0 bg-white opacity-0" />
