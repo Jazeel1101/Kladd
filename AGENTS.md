@@ -8,7 +8,7 @@ We can't compromise on these.
 
 - **Overlays only:** Kladd is a pill and overlays. Nothing else, and it never takes focus from the app the student writes in.
 - **Nothing leaves the Mac:** except to the student's own LLM key or subscription. No Kladd server, account or telemetry, not even opt-in.
-- **Light:** simple, fast and small. No bundled models or heavy downloads, and every new interaction stays one simple step.
+- **Light:** simple, fast and small. No bundled models, no downloads the student waits for, and every new interaction stays one simple step.
 - **Recording never breaks:** permissions are set up before the first recording; after that, Kladd falls back instead of failing.
 
 ## General principles
