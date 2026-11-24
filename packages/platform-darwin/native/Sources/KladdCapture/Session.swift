@@ -203,8 +203,6 @@ final class Session: @unchecked Sendable {
     start = hostNow()
     timeline.write([
       "type": "start", "t": 0, "at": iso(Date()), "accessibility": accessibility,
-      // Still required by TimelineEvent; sound is a clip's.
-      "microphone": false,
     ])
     say("recording")
     keys = CGEventSource.counterForEventType(.combinedSessionState, eventType: .keyDown)
