@@ -7,12 +7,14 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "build:native": "swift build -c release --package-path native",
     "typecheck": "effect-tsgo tsc -p tsconfig.json"
   },
   "dependencies": {
     "@kladd/core": "workspace:*",
     "@kladd/domain": "workspace:*",
     "effect": "catalog:"
+  },
+  "devDependencies": {
+    "vite-plus": "catalog:"
   }
 }
