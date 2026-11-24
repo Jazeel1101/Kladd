@@ -25,6 +25,8 @@ import { OverlayWindows } from "../ports/OverlayWindows";
 import { RecordingStore } from "../ports/RecordingStore";
 import { ScreenCapture } from "../ports/ScreenCapture";
 import { ScreenshotFiles } from "../ports/ScreenshotFiles";
+import { SessionCapture } from "../ports/SessionCapture";
+import { Transcriber } from "../ports/Transcriber";
 
 const screenCaptureTest = (
   permission: ScreenCapturePermission,
@@ -60,6 +62,18 @@ export const ScreenCaptureTest = {
   /** Granted, but asking again would revoke it: shows that a granted permission is not requested. */
   grantedRevokedOnRequest: screenCaptureTest("granted", "denied"),
 };
+
+/** Starts and stops at once and writes nothing. */
+export const SessionCaptureTest = Layer.succeed(
+  SessionCapture,
+  SessionCapture.of({ start: () => Effect.succeed({ stop: Effect.void }) }),
+);
+
+/** The model is always there; every recording is in Norwegian and writes no transcript. */
+export const TranscriberTest = Layer.succeed(
+  Transcriber,
+  Transcriber.of({ prepare: Effect.void, transcribe: () => Effect.succeed("no") }),
+);
 
 /** In-memory store. Starts empty. */
 export const RecordingStoreTest = Layer.effect(

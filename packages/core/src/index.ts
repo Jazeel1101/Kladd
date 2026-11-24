@@ -8,5 +8,7 @@ export * from "./ports/OverlayWindows";
 export * from "./ports/RecordingStore";
 export * from "./ports/ScreenCapture";
 export * from "./ports/ScreenshotFiles";
+export * from "./ports/SessionCapture";
+export * from "./ports/Transcriber";
 export * from "./recording/Recordings";
 export * from "./screenshot/Screenshots";
