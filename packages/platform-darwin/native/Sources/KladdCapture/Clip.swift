@@ -24,6 +24,16 @@ let videoKeyFrameInterval = 2
 let audioBitrate = 64_000
 /// Fragments make screen.mp4 and audio.m4a playable after a crash, up to the last fragment.
 let fragmentInterval = CMTime(seconds: 10, preferredTimescale: 600)
+/// A stream that stops on its own is started again after this: at once, ScreenCaptureKit's next
+/// call can hang (seen when another Kladd helper interrupted the stream).
+let videoRestartDelay: Double = 1
+/// After a failed start, the next try waits this long.
+let videoRetryDelay: Double = 5
+/// A started stream sends a frame at once, even of a still screen. One that sent none by now is
+/// dropped and started again: ScreenCaptureKit can leave a start hanging without an error.
+let videoStartTimeout: Double = 3
+/// A stop before the first frame waits this long for it, then exits without a video.
+let firstFrameWait: Double = 10
 
 // MARK: - Video
 
@@ -40,7 +50,10 @@ final class ClipVideo: NSObject, SCStreamDelegate, SCStreamOutput {
   /// Shown again at stop: ScreenCaptureKit sends no frames while the screen is still.
   private var lastFrame: CMSampleBuffer?
   private var finished = false
-  private(set) var stream: SCStream?
+  /// The stream frames are written from. Frames and errors from one it replaced are ignored.
+  /// Video queue.
+  private var current: SCStream?
+  private var currentSentFrame = false
   /// Called once, on the video queue, with the host time of the first frame: t = 0.
   var onFirstFrame: (CMTime) -> Void = { _ in }
   /// Called on the main queue when the stream stops on its own (display gone, capture error).
@@ -48,7 +61,8 @@ final class ClipVideo: NSObject, SCStreamDelegate, SCStreamOutput {
 
   init(url: URL) { self.url = url }
 
-  func start(filter: SCContentFilter, display: SCDisplay) async throws {
+  /// Replaces the current stream with a new one through `filter`.
+  @MainActor func start(filter: SCContentFilter, display: SCDisplay) async throws {
     let full = pixelConfiguration(for: display)
     let scale = min(1, videoMaxSize.width / CGFloat(full.width), videoMaxSize.height / CGFloat(full.height))
     let config = SCStreamConfiguration()
@@ -61,12 +75,28 @@ final class ClipVideo: NSObject, SCStreamDelegate, SCStreamOutput {
     config.queueDepth = 4
     let stream = SCStream(filter: filter, configuration: config, delegate: self)
     try stream.addStreamOutput(self, type: .screen, sampleHandlerQueue: queue)
+    use(stream)
     try await stream.startCapture()
-    self.stream = stream
   }
 
+  private func use(_ stream: SCStream) {
+    let replaced = queue.sync {
+      defer {
+        current = stream
+        currentSentFrame = false
+      }
+      return current
+    }
+    replaced?.stopCapture { _ in }
+  }
+
+  /// Whether the current stream has sent a frame yet.
+  var sentFrame: Bool { queue.sync { currentSentFrame } }
+
   func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
-    guard type == .screen, !finished, sampleBuffer.isValid,
+    guard type == .screen, stream === current else { return }
+    currentSentFrame = true
+    guard !finished, sampleBuffer.isValid,
       let attachments = CMSampleBufferGetSampleAttachmentsArray(sampleBuffer, createIfNecessary: false)
         as? [[SCStreamFrameInfo: Any]],
       let raw = attachments.first?[.status] as? Int, SCFrameStatus(rawValue: raw) == .complete
@@ -122,8 +152,8 @@ final class ClipVideo: NSObject, SCStreamDelegate, SCStreamOutput {
   /// Ends the file at `end` with the last frame again, so the video lasts until the recording
   /// stopped (endSession alone does not make players show it that long).
   func finish(at end: CMTime, done: @escaping (Error?) -> Void) {
-    stream?.stopCapture { _ in }
     queue.async {
+      self.current?.stopCapture { _ in }
       self.finished = true
       guard let writer = self.writer, writer.status == .writing else { return done(self.writer?.error) }
       if let input = self.input, let last = self.lastFrame, end > self.lastTime, input.isReadyForMoreMediaData {
@@ -144,7 +174,7 @@ final class ClipVideo: NSObject, SCStreamDelegate, SCStreamOutput {
 
   /// Calls `accepted` on the main queue once the stream uses `filter`.
   func update(_ filter: SCContentFilter, accepted: @escaping () -> Void) {
-    stream?.updateContentFilter(filter) { error in
+    queue.sync { current }?.updateContentFilter(filter) { error in
       if let error { return logError("cannot update the video filter: \(error)") }
       DispatchQueue.main.async(execute: accepted)
     }
@@ -160,6 +190,7 @@ final class ClipVideo: NSObject, SCStreamDelegate, SCStreamOutput {
   }
 
   func stream(_ stream: SCStream, didStopWithError error: Error) {
+    guard queue.sync(execute: { stream === current }) else { return }
     logError("video stopped: \(error)")
     DispatchQueue.main.async { self.onStreamStopped() }
   }
@@ -288,7 +319,7 @@ final class ClipAudio: NSObject, AVCaptureAudioDataOutputSampleBufferDelegate {
 // MARK: - Clip
 
 /// Runs on the main queue, apart from the video and audio callbacks.
-final class Clip: @unchecked Sendable {
+@MainActor final class Clip {
   let privacy: PrivacyFilter
   let video: ClipVideo
   let audioURL: URL
@@ -298,6 +329,8 @@ final class Clip: @unchecked Sendable {
   var timer: Timer?
 
   var start: CMTime?
+  /// Counts video starts: a pending one that is no longer the latest does nothing.
+  var videoAttempt = 0
   var stopRequested = false
   var stopping = false
 
@@ -332,17 +365,25 @@ final class Clip: @unchecked Sendable {
     privacy.onPending = { [video] in video.hold() }
     privacy.onClear = { [video] in video.release() }
     privacy.watchLaunches()
-    video.onStreamStopped = { [weak self] in self?.restartVideo() }
+    video.onStreamStopped = { [weak self] in self?.restartVideo(after: videoRestartDelay) }
     video.onFirstFrame = { time in DispatchQueue.main.async { self.started(at: time) } }
     audio?.run()
-    try await video.start(filter: filter, display: display)
+    watchVideo(videoAttempt)
+    do {
+      try await startVideo(filter: filter, display: display)
+    } catch {
+      logError("cannot start video: \(error)")
+      restartVideo(after: videoRetryDelay)
+    }
   }
 
   private func started(at time: CMTime) {
     start = time
     audio?.begin(at: time)
     ink.start()
-    timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in self?.privacy.check() }
+    timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+      MainActor.assumeIsolated { self?.privacy.check() }
+    }
     say("recording")
     if stopRequested { stop() }
   }
@@ -354,10 +395,20 @@ final class Clip: @unchecked Sendable {
     if let start { audio.begin(at: start) }
   }
 
-  /// Finishes the ink, video and audio, and exits.
+  /// Finishes the ink, video and audio, and exits. Before the first frame it waits for it, so the
+  /// video is valid, but not forever: the stream may never work.
   func stop() {
+    guard start != nil else {
+      if !stopRequested {
+        DispatchQueue.main.asyncAfter(deadline: .now() + firstFrameWait) {
+          if self.start == nil { fail("stopped before the first video frame") }
+        }
+      }
+      stopRequested = true
+      return
+    }
     stopRequested = true
-    guard start != nil, !stopping else { return }
+    guard !stopping else { return }
     stopping = true
     privacy.stopped = true
     timer?.invalidate()
@@ -383,18 +434,40 @@ final class Clip: @unchecked Sendable {
   }
 
   /// The video keeps going: a stream that stops on its own is started again into the same file.
-  func restartVideo() {
+  func restartVideo(after delay: Double) {
     guard !stopping else { return }
-    Task { @MainActor in
-      do {
-        let (filter, display) = try await privacy.load()
-        let filtered = privacy.filteredPids
-        try await video.start(filter: filter, display: display)
-        privacy.accepted(filtered: filtered)
-      } catch {
-        logError("cannot restart video: \(error)")
-        DispatchQueue.main.asyncAfter(deadline: .now() + 5) { self.restartVideo() }
+    videoAttempt += 1
+    let attempt = videoAttempt
+    DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+      guard attempt == self.videoAttempt, !self.stopping else { return }
+      self.watchVideo(attempt)
+      Task {
+        do {
+          let (filter, display) = try await self.privacy.load()
+          guard attempt == self.videoAttempt else { return }
+          try await self.startVideo(filter: filter, display: display)
+        } catch {
+          guard attempt == self.videoAttempt else { return }
+          logError("cannot restart video: \(error)")
+          self.restartVideo(after: videoRetryDelay)
+        }
       }
+    }
+  }
+
+  private func startVideo(filter: SCContentFilter, display: SCDisplay) async throws {
+    let filtered = privacy.filteredPids
+    try await video.start(filter: filter, display: display)
+    privacy.accepted(filtered: filtered)
+  }
+
+  /// ScreenCaptureKit can leave a call hanging without an error: an attempt with no frame by
+  /// `videoStartTimeout` is given up for a new one.
+  private func watchVideo(_ attempt: Int) {
+    DispatchQueue.main.asyncAfter(deadline: .now() + videoStartTimeout) {
+      guard attempt == self.videoAttempt, !self.stopping, !self.video.sentFrame else { return }
+      logError("video sent no frame; starting it again")
+      self.restartVideo(after: 0)
     }
   }
 }

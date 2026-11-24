@@ -6,7 +6,7 @@ import AppKit
 import ScreenCaptureKit
 
 /// Runs on the main queue.
-final class PrivacyFilter: @unchecked Sendable {
+@MainActor final class PrivacyFilter {
   let excludePid: pid_t?
   let excludedApps: Set<String>
   private(set) var filter: SCContentFilter?
@@ -47,11 +47,14 @@ final class PrivacyFilter: @unchecked Sendable {
       forName: NSWorkspace.didLaunchApplicationNotification, object: nil, queue: .main
     ) { [weak self] note in
       let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
-      guard let self, let id = app?.bundleIdentifier, self.excludedApps.contains(id) else { return }
-      self.pending = true
-      self.onPending()
-      // Its first window can take a moment to be listed.
-      for delay in [0.2, 1, 3] { DispatchQueue.main.asyncAfter(deadline: .now() + delay) { self.refresh() } }
+      guard let id = app?.bundleIdentifier else { return }
+      MainActor.assumeIsolated {
+        guard let self, self.excludedApps.contains(id) else { return }
+        self.pending = true
+        self.onPending()
+        // Its first window can take a moment to be listed.
+        for delay in [0.2, 1, 3] { DispatchQueue.main.asyncAfter(deadline: .now() + delay) { self.refresh() } }
+      }
     }
   }
 

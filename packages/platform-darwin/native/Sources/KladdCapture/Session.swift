@@ -147,7 +147,7 @@ func secureFieldFocused(_ app: NSRunningApplication) -> Bool {
 }
 
 /// Runs on the main queue, apart from the OCR callbacks.
-final class Session: @unchecked Sendable {
+@MainActor final class Session {
   let dir: URL
   let privacy: PrivacyFilter
   var excludePid: pid_t? { privacy.excludePid }
@@ -216,7 +216,9 @@ final class Session: @unchecked Sendable {
       }
       self.files.write(["t": seconds(self.t(min(hostNow(), self.end ?? .positiveInfinity))), "path": path])
     }
-    timer = Timer.scheduledTimer(withTimeInterval: focusPollInterval, repeats: true) { [weak self] _ in self?.tick() }
+    timer = Timer.scheduledTimer(withTimeInterval: focusPollInterval, repeats: true) { [weak self] _ in
+      MainActor.assumeIsolated { self?.tick() }
+    }
     tick()
     if stopRequested { stop() }
   }
