@@ -164,6 +164,8 @@ export const AppAdaptersTest = (all: ReadonlyArray<AppAdapter> = []) =>
 interface ShownWindow {
   readonly kind: WindowKind;
   readonly bounds: Rect | undefined;
+  /** Set when this entry is a `hide`. */
+  readonly hidden?: true;
 }
 
 /** What OverlayWindowsTest saw. Read it with `yield* OverlayWindowsLog` in a test. */
@@ -175,13 +177,17 @@ export class OverlayWindowsLog extends Context.Service<
 const testSize = { width: 300, height: 400 };
 const testDisplay = { x: 0, y: 0, width: 1440, height: 900 };
 
-/** Records every `show` in OverlayWindowsLog. Every window is 300x400 on a 1440x900 screen. */
+/** Records every `show` and `hide` in OverlayWindowsLog. Every window is 300x400 on a 1440x900 screen. */
 export const OverlayWindowsTest = Layer.unwrap(
   Effect.gen(function* () {
     const log = yield* Ref.make<ReadonlyArray<ShownWindow>>([]);
     const windows = OverlayWindows.of({
       show: (kind, bounds) => Ref.update(log, (shown) => [...shown, { kind, bounds }]),
-      hide: () => Effect.void,
+      hide: (kind) =>
+        Ref.update(log, (shown): ReadonlyArray<ShownWindow> => [
+          ...shown,
+          { kind, bounds: undefined, hidden: true },
+        ]),
       prepare: () => Effect.void,
       moveTo: () => Effect.void,
       setClickThrough: () => Effect.void,

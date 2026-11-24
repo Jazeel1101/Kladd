@@ -43,7 +43,11 @@ export class Screenshots extends Context.Service<
      * screenshot is attached at once, without a flight. Leaves the logging overlay alone.
      */
     readonly take: Effect.Effect<Screenshot, ScreenCapturePermissionDenied | ScreenCaptureFailed>;
-    /** The flight window calls this when the screenshot reaches the pill. Ignores any other id. */
+    /**
+     * The flight window calls this when the screenshot has dropped into the pill: attaches it and
+     * hides the flight window. Ignores any screenshot that is no longer the one flying, so an old
+     * flight can't hide a newer one.
+     */
     readonly land: (id: ScreenshotId) => Effect.Effect<void>;
     /** The pill reports where its notch is on screen whenever it comes to rest. */
     readonly aimAt: (notch: Rect) => Effect.Effect<void>;
@@ -81,10 +85,16 @@ export class Screenshots extends Context.Service<
         return screenshot;
       }).pipe(oneAtATime, Effect.withSpan("Screenshots.take"));
 
-      const land = (id: ScreenshotId) =>
-        SubscriptionRef.update(tray, (current) =>
-          current.flying?.screenshot.id === id ? landFlying(current) : current,
-        ).pipe(Effect.withSpan("Screenshots.land"));
+      const land = Effect.fn("Screenshots.land")(
+        function* (id: ScreenshotId) {
+          const current = yield* SubscriptionRef.get(tray);
+          if (current.flying?.screenshot.id !== id) return;
+          yield* SubscriptionRef.set(tray, landFlying(current));
+          yield* windows.hide("flight");
+        },
+        // Behind any take in progress, which may be about to fly a newer screenshot.
+        oneAtATime,
+      );
 
       return Screenshots.of({
         take,

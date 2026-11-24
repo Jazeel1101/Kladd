@@ -3,7 +3,6 @@ import { screenshotUrl } from "@kladd/contract";
 import type { ScreenshotFlight as Flight } from "@kladd/domain";
 import { AsyncResult } from "effect/reactivity";
 import { useEffect, useRef, useState } from "react";
-import { hideWindowAtom } from "../windows/atoms";
 import { landScreenshotAtom, screenshotTrayAtom } from "./atoms";
 import { type Spring, springTiming } from "./spring";
 
@@ -108,7 +107,6 @@ const afterNextPaint = (f: () => void) => {
 export const ScreenshotFlight = () => {
   const tray = useAtomValue(screenshotTrayAtom);
   const land = useAtomSet(landScreenshotAtom);
-  const hideWindow = useAtomSet(hideWindowAtom);
   const flying = AsyncResult.isSuccess(tray) ? tray.value.flying : null;
   // The flight being played. Main clears `flying` once it lands, so only a new flight replaces it.
   const [flight, setFlight] = useState<Flight | null>(null);
@@ -136,8 +134,8 @@ export const ScreenshotFlight = () => {
     const { id } = flight.screenshot;
     const finish = () => {
       c.style.visibility = "hidden";
+      // Main attaches it and hides this window, unless a newer screenshot is already flying.
       land({ payload: { id } });
-      hideWindow({ payload: { kind: "flight" } });
     };
     if (reducedMotion()) {
       finish();
@@ -164,7 +162,7 @@ export const ScreenshotFlight = () => {
       cancelled = true;
       stop();
     };
-  }, [flight, land, hideWindow]);
+  }, [flight, land]);
 
   const from = flight?.from;
   return (

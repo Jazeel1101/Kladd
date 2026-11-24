@@ -96,6 +96,19 @@ describe("Screenshots.take", () => {
 });
 
 describe("Screenshots.land", () => {
+  it.effect("attaches the screenshot in flight and hides the flight window", () =>
+    Effect.gen(function* () {
+      const screenshots = yield* Screenshots;
+      const screenshot = yield* takeAimed;
+      yield* screenshots.land(screenshot.id);
+      assert.deepStrictEqual(yield* tray, { flying: null, attached: [screenshot] });
+      assert.deepStrictEqual(yield* Ref.get(yield* OverlayWindowsLog), [
+        { kind: "flight", bounds: display },
+        { kind: "flight", bounds: undefined, hidden: true },
+      ]);
+    }).pipe(withCapture()),
+  );
+
   it.effect("moves the screenshot in flight to the front of the attached ones", () =>
     Effect.gen(function* () {
       const screenshots = yield* Screenshots;
@@ -112,15 +125,17 @@ describe("Screenshots.land", () => {
     }).pipe(withCapture()),
   );
 
-  it.effect("ignores a screenshot that is not the one in flight", () =>
+  it.effect("ignores an older flight, and leaves the window to the newer one", () =>
     Effect.gen(function* () {
       const screenshots = yield* Screenshots;
       const first = yield* takeAimed;
       const second = yield* takeAimed;
+      // The first flight finishes after the second has started.
       yield* screenshots.land(first.id);
       const now = yield* tray;
       assert.strictEqual(now?.flying?.screenshot.id, second.id);
       assert.strictEqual(now?.attached.length, 1);
+      assert.deepStrictEqual(yield* shownWindows, ["flight", "flight"]);
     }).pipe(withCapture()),
   );
 });

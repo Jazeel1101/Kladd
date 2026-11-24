@@ -129,12 +129,17 @@ const overlayOptions = {
   type: "panel",
 } satisfies Electron.BrowserWindowConstructorOptions;
 
+/** Where a window opens when the caller gives no bounds. */
+const defaultBounds = (spec: WindowSpec, area: Rect): Rect =>
+  spec.fill ? area : { ...spec.size, ...spec.position(spec.size, area) };
+
 const createWindow = (spec: WindowSpec) => {
   const window = new BrowserWindow({
     ...(spec.overlay ? overlayOptions : { title: "Kladd" }),
     ...(spec.noShadow ? { hasShadow: false } : {}),
     ...(spec.effect ? { focusable: false, enableLargerThanScreen: true } : {}),
-    ...spec.size,
+    // Already where it opens, so its UI reads its real position while it loads (the pill does).
+    ...defaultBounds(spec, workArea(null)),
     show: false,
     webPreferences: {
       preload: preloadPath,
@@ -211,8 +216,7 @@ export const OverlayWindowsLive = Layer.effect(
       const spec = windowTable[kind];
       const window = yield* get(kind);
       const area = workArea(bounds ?? null);
-      const target =
-        bounds ?? (spec.fill ? area : { ...spec.size, ...spec.position(spec.size, area) });
+      const target = bounds ?? defaultBounds(spec, area);
       // Animate only moves of a window that is already on screen.
       window.setBounds(target, window.isVisible());
       if (spec.overlay) {
