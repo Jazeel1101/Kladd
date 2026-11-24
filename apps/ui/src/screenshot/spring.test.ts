@@ -1,4 +1,4 @@
-import { assert, describe, it } from "vite-plus/test";
+import { assert, describe, it } from "@effect/vitest";
 import { springTiming } from "./spring";
 
 const points = (easing: string) => easing.slice("linear(".length, -1).split(", ").map(Number);

@@ -6,6 +6,7 @@ import { createRoot } from "react-dom/client";
 import { ExpandedView } from "./expanded/ExpandedView";
 import { LoggingOverlay } from "./logging/LoggingOverlay";
 import { RecordingPill } from "./pill/RecordingPill";
+import { SnapZones } from "./pill/SnapZones";
 import { ScreenshotFlight } from "./screenshot/ScreenshotFlight";
 import { Settings } from "./settings/Settings";
 import "./styles.css";
@@ -13,6 +14,7 @@ import "./styles.css";
 /** What each window shows. Main opens a window on index.html with its WindowKind as the hash (#pill). */
 const windows: Record<WindowKind, ComponentType> = {
   pill: RecordingPill,
+  zones: SnapZones,
   logging: LoggingOverlay,
   expanded: ExpandedView,
   settings: Settings,

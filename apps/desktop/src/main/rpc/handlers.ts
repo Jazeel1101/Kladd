@@ -19,9 +19,12 @@ export const RpcHandlersLive = KladdRpcs.toLayer(
       WatchLoggingOverlay: () => logging.changes,
       WatchScreenshots: () => screenshots.changes,
       LandScreenshot: ({ id }) => screenshots.land(id),
+      SetPillNotch: ({ notch }) => screenshots.aimAt(notch),
       OpenPillMenu: () => pillMenu.open,
       ShowWindow: ({ kind }) => windows.show(kind),
       HideWindow: ({ kind }) => windows.hide(kind),
+      MovePill: ({ position }) => windows.moveTo("pill", position),
+      SetPillClickThrough: ({ clickThrough }) => windows.setClickThrough("pill", clickThrough),
     };
   }),
 );

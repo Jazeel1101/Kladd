@@ -2,7 +2,9 @@ import {
   ClosableWindow,
   LoggingOverlayInfo,
   OpenableWindow,
+  Point,
   RecordingSession,
+  Rect,
   ScreenshotId,
   ScreenshotTray,
 } from "@kladd/domain";
@@ -27,13 +29,22 @@ export class KladdRpcs extends RpcGroup.make(
   }),
   /** Pops up the pill's native menu: start/stop recording, show the logging overlay, Settings, Quit. */
   Rpc.make("OpenPillMenu"),
-  /** The screenshot in flight and the ones in the logging overlay's tray, then every change. ⌃⇧C takes one. */
+  /** The screenshot in flight and the attached ones, then every change. ⌃⇧C takes one. */
   Rpc.make("WatchScreenshots", {
     success: ScreenshotTray,
     stream: true,
   }),
-  /** The flight window's screenshot reached the tray. */
+  /** The flight window's screenshot has dropped into the pill. */
   Rpc.make("LandScreenshot", { payload: { id: ScreenshotId } }),
+  /** Where the pill's notch is on screen, once it comes to rest: ⌃⇧C screenshots fly into it. */
+  Rpc.make("SetPillNotch", { payload: { notch: Rect } }),
   Rpc.make("ShowWindow", { payload: { kind: OpenableWindow } }),
   Rpc.make("HideWindow", { payload: { kind: ClosableWindow } }),
+  /** Moves the pill window's top-left corner to `position` at once: the UI is dragging the pill. */
+  Rpc.make("MovePill", { payload: { position: Point } }),
+  /**
+   * Whether clicks on the pill window pass through to the apps below. The window is larger than the
+   * notch, so the UI turns this off only while the pointer is over the notch.
+   */
+  Rpc.make("SetPillClickThrough", { payload: { clickThrough: Schema.Boolean } }),
 ) {}

@@ -1,5 +1,11 @@
 import { OverlayWindows } from "@kladd/core";
-import { placeWithoutAnchor, type Rect, type Size, type WindowKind } from "@kladd/domain";
+import {
+  placeWithoutAnchor,
+  type Point,
+  type Rect,
+  type Size,
+  type WindowKind,
+} from "@kladd/domain";
 import { BrowserWindow, app, screen } from "electron";
 import { Deferred, Effect, Layer, Schedule } from "effect";
 import { join } from "node:path";
@@ -22,11 +28,19 @@ interface WindowSpec {
   readonly size: Size;
   /** Overlays float over other apps and never take focus when shown. Settings is the only non-overlay. */
   readonly overlay: boolean;
+  /** No macOS window shadow: the surface draws its own, or has none. */
+  readonly noShadow?: true;
+  /** Starts letting clicks through; the UI turns that off over the parts it draws. */
+  readonly clickThrough?: true;
+  /** Covers the whole work area instead of opening at `size`. */
+  readonly fill?: true;
+  /** Floats above the other overlays, so nothing Kladd shows covers it. */
+  readonly onTop?: true;
   /** Where the window opens when the caller gives no bounds. */
   readonly position: (size: Size, workArea: Rect) => { x: number; y: number };
   /**
-   * A window that only plays an animation over everything, menu bar included: clicks go through
-   * it, it has no shadow, and it keeps animating while it is hidden.
+   * A window that only plays an animation over everything, the menu bar and pill included: it
+   * never takes the pointer or focus, and keeps animating while it is hidden.
    */
   readonly effect?: true;
 }
@@ -36,13 +50,27 @@ interface WindowSpec {
  */
 const windowTable: Record<WindowKind, WindowSpec> = {
   pill: {
-    size: { width: 132, height: 36 },
+    // Matches the notch's SVG canvas (apps/ui/src/pill/notchShape.ts): the notch plus room to pull
+    // it from the wall. The UI moves it while the user drags the notch.
+    size: { width: 194, height: 194 },
     overlay: true,
-    // Left screen edge, four fifths down.
+    noShadow: true,
+    clickThrough: true,
+    onTop: true,
+    // Docked on the left screen edge, four fifths down.
     position: (size, area) => ({
-      x: area.x + 8,
+      x: area.x,
       y: Math.round(area.y + area.height * 0.8 - size.height / 2),
     }),
+  },
+  zones: {
+    // Drawn over the whole work area, beneath the pill; clicks always go through to the apps below.
+    size: { width: 0, height: 0 },
+    overlay: true,
+    noShadow: true,
+    clickThrough: true,
+    fill: true,
+    position: (_size, area) => area,
   },
   logging: {
     size: { width: 360, height: 480 },
@@ -64,6 +92,7 @@ const windowTable: Record<WindowKind, WindowSpec> = {
     // Always shown over the whole main display (core's Screenshots); this is only the fallback.
     size: { width: 1440, height: 900 },
     overlay: true,
+    noShadow: true,
     position: () => ({ x: 0, y: 0 }),
     effect: true,
   },
@@ -103,7 +132,8 @@ const overlayOptions = {
 const createWindow = (spec: WindowSpec) => {
   const window = new BrowserWindow({
     ...(spec.overlay ? overlayOptions : { title: "Kladd" }),
-    ...(spec.effect ? { hasShadow: false, focusable: false, enableLargerThanScreen: true } : {}),
+    ...(spec.noShadow ? { hasShadow: false } : {}),
+    ...(spec.effect ? { focusable: false, enableLargerThanScreen: true } : {}),
     ...spec.size,
     show: false,
     webPreferences: {
@@ -115,10 +145,14 @@ const createWindow = (spec: WindowSpec) => {
     },
   });
   if (spec.overlay) {
-    // Effects go above the menu bar and the other overlays, so they can fly into them.
-    window.setAlwaysOnTop(true, spec.effect ? "screen-saver" : "floating");
+    // Effects go above the menu bar and every other overlay, the pill included, so they can fly
+    // into them. The relative level lifts the pill one step above the other overlays (macOS only).
+    if (spec.effect) window.setAlwaysOnTop(true, "screen-saver");
+    else window.setAlwaysOnTop(true, "floating", spec.onTop ? 1 : 0);
     window.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   }
+  if (spec.clickThrough) window.setIgnoreMouseEvents(true, { forward: true });
+  // Effects never take the pointer, not even to see it move.
   if (spec.effect) window.setIgnoreMouseEvents(true);
   return window;
 };
@@ -177,7 +211,8 @@ export const OverlayWindowsLive = Layer.effect(
       const spec = windowTable[kind];
       const window = yield* get(kind);
       const area = workArea(bounds ?? null);
-      const target = bounds ?? { ...spec.size, ...spec.position(spec.size, area) };
+      const target =
+        bounds ?? (spec.fill ? area : { ...spec.size, ...spec.position(spec.size, area) });
       // Animate only moves of a window that is already on screen.
       window.setBounds(target, window.isVisible());
       if (spec.overlay) {
@@ -188,26 +223,34 @@ export const OverlayWindowsLive = Layer.effect(
       }
     });
 
-    /** The window, if it was created and not destroyed. Never creates one. */
-    const existing = (kind: WindowKind) => {
-      const window = open.get(kind)?.window;
-      return window === undefined || window.isDestroyed() ? null : window;
-    };
-
     const hide = (kind: WindowKind) =>
-      Effect.sync(() => existing(kind)?.hide()).pipe(Effect.withSpan("OverlayWindows.hide"));
-
-    const bounds = (kind: WindowKind) =>
       Effect.sync(() => {
-        const window = existing(kind);
-        return window?.isVisible() === true ? window.getBounds() : null;
-      });
+        const window = open.get(kind)?.window;
+        if (window !== undefined && !window.isDestroyed()) window.hide();
+      }).pipe(Effect.withSpan("OverlayWindows.hide"));
+
+    const moveTo = Effect.fn("OverlayWindows.moveTo")(function* (
+      kind: WindowKind,
+      position: Point,
+    ) {
+      const window = yield* get(kind);
+      window.setPosition(Math.round(position.x), Math.round(position.y), false);
+    });
+
+    const setClickThrough = Effect.fn("OverlayWindows.setClickThrough")(function* (
+      kind: WindowKind,
+      clickThrough: boolean,
+    ) {
+      const window = yield* get(kind);
+      window.setIgnoreMouseEvents(clickThrough, { forward: true });
+    });
 
     return OverlayWindows.of({
       show,
       hide,
-      prepare: (kind) => Effect.asVoid(get(kind)),
-      bounds,
+      prepare: (kind) => get(kind).pipe(Effect.asVoid),
+      moveTo,
+      setClickThrough,
       size: (kind) => windowTable[kind].size,
       workArea: (near) => Effect.sync(() => workArea(near)),
       mainDisplay: Effect.sync(() => screen.getPrimaryDisplay().bounds),
@@ -215,10 +258,14 @@ export const OverlayWindowsLive = Layer.effect(
   }),
 );
 
-/** Kladd's presence: the pill is shown at startup and stays. */
+/**
+ * Kladd's presence: the pill is shown at startup and stays. Its snap zones are loaded behind it, so
+ * they show the moment the pill is first dragged.
+ */
 export const PillLive = Layer.effectDiscard(
   Effect.gen(function* () {
     const windows = yield* OverlayWindows;
     yield* windows.show("pill");
+    yield* windows.prepare("zones");
   }),
 );

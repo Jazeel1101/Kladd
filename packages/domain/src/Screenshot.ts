@@ -39,15 +39,17 @@ export type ScreenshotTray = typeof ScreenshotTray.Type;
 export const emptyScreenshotTray: ScreenshotTray = { flying: null, attached: [] };
 
 /**
- * Where a new screenshot lands: centred on the pill at `pill`, as tall as the pill, keeping the
- * display's aspect ratio. From there it drops into the pill and disappears.
+ * Where a new screenshot lands: the largest rect with the display's aspect ratio that fits inside the
+ * pill's notch at `notch`, centred on it. From there it drops into the pill and disappears.
  */
-export const pillTarget = (pill: Rect, display: Size): Rect => {
-  const width = Math.round((pill.height * display.width) / display.height);
+export const landingIn = (notch: Rect, display: Size): Rect => {
+  const scale = Math.min(notch.width / display.width, notch.height / display.height);
+  const width = Math.round(display.width * scale);
+  const height = Math.round(display.height * scale);
   return {
-    x: pill.x + Math.round((pill.width - width) / 2),
-    y: pill.y,
+    x: notch.x + Math.round((notch.width - width) / 2),
+    y: notch.y + Math.round((notch.height - height) / 2),
     width,
-    height: pill.height,
+    height,
   };
 };

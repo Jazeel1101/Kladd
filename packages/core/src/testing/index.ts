@@ -175,31 +175,16 @@ export class OverlayWindowsLog extends Context.Service<
 const testSize = { width: 300, height: 400 };
 const testDisplay = { x: 0, y: 0, width: 1440, height: 900 };
 
-/**
- * Records every `show` in OverlayWindowsLog. Every window is 300x400 on a 1440x900 screen; one shown
- * without bounds sits at the top left.
- */
+/** Records every `show` in OverlayWindowsLog. Every window is 300x400 on a 1440x900 screen. */
 export const OverlayWindowsTest = Layer.unwrap(
   Effect.gen(function* () {
     const log = yield* Ref.make<ReadonlyArray<ShownWindow>>([]);
-    const visible = yield* Ref.make<ReadonlyMap<WindowKind, Rect>>(new Map());
     const windows = OverlayWindows.of({
-      show: (kind, bounds) =>
-        Ref.update(log, (shown) => [...shown, { kind, bounds }]).pipe(
-          Effect.andThen(
-            Ref.update(visible, (on) =>
-              new Map(on).set(kind, bounds ?? { x: 0, y: 0, ...testSize }),
-            ),
-          ),
-        ),
-      hide: (kind) =>
-        Ref.update(visible, (on) => {
-          const next = new Map(on);
-          next.delete(kind);
-          return next;
-        }),
+      show: (kind, bounds) => Ref.update(log, (shown) => [...shown, { kind, bounds }]),
+      hide: () => Effect.void,
       prepare: () => Effect.void,
-      bounds: (kind) => Effect.map(Ref.get(visible), (on) => on.get(kind) ?? null),
+      moveTo: () => Effect.void,
+      setClickThrough: () => Effect.void,
       size: () => testSize,
       workArea: () => Effect.succeed(testDisplay),
       mainDisplay: Effect.succeed(testDisplay),

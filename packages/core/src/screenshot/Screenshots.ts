@@ -2,12 +2,22 @@ import {
   type ScreenCaptureFailed,
   type ScreenCapturePermissionDenied,
   Screenshot,
+  type Rect,
   type ScreenshotId,
   type ScreenshotTray,
   emptyScreenshotTray,
-  pillTarget,
+  landingIn,
 } from "@kladd/domain";
-import { Context, DateTime, Effect, Layer, Semaphore, type Stream, SubscriptionRef } from "effect";
+import {
+  Context,
+  DateTime,
+  Effect,
+  Layer,
+  Ref,
+  Semaphore,
+  type Stream,
+  SubscriptionRef,
+} from "effect";
 import { requireScreenCapture } from "../capture/requireScreenCapture";
 import { Ids } from "../ports/Ids";
 import { OverlayWindows } from "../ports/OverlayWindows";
@@ -29,11 +39,14 @@ export class Screenshots extends Context.Service<
   {
     /**
      * Asks for screen capture permission first if Kladd doesn't have it, then starts the
-     * screenshot's flight into the pill. Leaves the logging overlay alone.
+     * screenshot's flight into the pill's notch. Before the pill has said where its notch is, the
+     * screenshot is attached at once, without a flight. Leaves the logging overlay alone.
      */
     readonly take: Effect.Effect<Screenshot, ScreenCapturePermissionDenied | ScreenCaptureFailed>;
     /** The flight window calls this when the screenshot reaches the pill. Ignores any other id. */
     readonly land: (id: ScreenshotId) => Effect.Effect<void>;
+    /** The pill reports where its notch is on screen whenever it comes to rest. */
+    readonly aimAt: (notch: Rect) => Effect.Effect<void>;
     /** The tray now, then on every take and land. */
     readonly changes: Stream.Stream<ScreenshotTray>;
   }
@@ -46,6 +59,7 @@ export class Screenshots extends Context.Service<
       const ids = yield* Ids;
       const windows = yield* OverlayWindows;
       const tray = yield* SubscriptionRef.make(emptyScreenshotTray);
+      const notch = yield* Ref.make<Rect | null>(null);
       // One take at a time, so two quick presses fly one after the other, in order.
       const oneAtATime = Semaphore.withPermit(yield* Semaphore.make(1));
 
@@ -55,15 +69,15 @@ export class Screenshots extends Context.Service<
         yield* capture.screenshot(yield* files.file(id));
         const display = yield* windows.mainDisplay;
         const screenshot = new Screenshot({ id, takenAt: yield* DateTime.now, display });
-        // The pill is always on screen. If it somehow isn't, it is shown, so the flight has somewhere to land.
-        if ((yield* windows.bounds("pill")) === null) yield* windows.show("pill");
-        const to = pillTarget((yield* windows.bounds("pill")) ?? display, display);
-        // A screenshot still flying lands at once, so the new one always has the slot to itself.
-        yield* SubscriptionRef.update(tray, (current) => ({
-          ...landFlying(current),
-          flying: { screenshot, from: display, to },
-        }));
-        yield* windows.show("flight", display);
+        const target = yield* Ref.get(notch);
+        // A screenshot still flying lands at once, so only one flies at a time.
+        yield* SubscriptionRef.update(tray, (current) => {
+          const landed = landFlying(current);
+          return target === null
+            ? { flying: null, attached: [screenshot, ...landed.attached] }
+            : { ...landed, flying: { screenshot, from: display, to: landingIn(target, display) } };
+        });
+        if (target !== null) yield* windows.show("flight", display);
         return screenshot;
       }).pipe(oneAtATime, Effect.withSpan("Screenshots.take"));
 
@@ -72,7 +86,12 @@ export class Screenshots extends Context.Service<
           current.flying?.screenshot.id === id ? landFlying(current) : current,
         ).pipe(Effect.withSpan("Screenshots.land"));
 
-      return Screenshots.of({ take, land, changes: SubscriptionRef.changes(tray) });
+      return Screenshots.of({
+        take,
+        land,
+        aimAt: (at) => Ref.set(notch, at),
+        changes: SubscriptionRef.changes(tray),
+      });
     }),
   );
 }

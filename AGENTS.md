@@ -6,13 +6,13 @@ Local-first macOS overlay (Electron) that records what a student does and helps 
 
 Kladd is overlays only. Never add a main window or a Dock or menu bar icon. The Electron main process is the backend, and every window is a thin view over it, with one UI route each:
 
-| Window             | Where                                                                 | Shows                                                                    |
-| ------------------ | --------------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| `RecordingPill`    | Left screen edge, ~4/5 down                                           | Always. Click: expanded view. Menu: start/stop recording, Settings, Quit |
-| `LoggingOverlay`   | Next to where the user writes (`docs/internals/overlay-placement.md`) | When a recording stops                                                   |
-| `ExpandedView`     | Overlay                                                               | Opened from the pill: summary and images                                 |
-| `ScreenshotFlight` | Over the whole main display (`docs/internals/screenshot-flight.md`)   | While a ⌃⇧C screenshot flies into the pill                               |
-| Settings           | The only normal window                                                | Opened from the pill menu                                                |
+| Window             | Where                                                                 | Shows                                                                      |
+| ------------------ | --------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| `RecordingPill`    | Left screen edge, ~4/5 down; dragged to any edge, or floating         | Always. Chevron: expanded view. Menu: start/stop recording, Settings, Quit |
+| `LoggingOverlay`   | Next to where the user writes (`docs/internals/overlay-placement.md`) | When a recording stops                                                     |
+| `ExpandedView`     | Overlay                                                               | Opened from the pill: summary and images                                   |
+| `ScreenshotFlight` | Over the whole main display (`docs/internals/screenshot-flight.md`)   | While a ⌃⇧C screenshot flies into the pill                                 |
+| Settings           | The only normal window                                                | Opened from the pill menu                                                  |
 
 Supporting a new app is an adapter in `packages/adapters`: see `docs/operations/adding-app-support.md`.
 
