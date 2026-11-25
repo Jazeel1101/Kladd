@@ -18,6 +18,12 @@ export interface CaptureHelper {
  */
 export const screenshotTimeout = "10 seconds";
 
+/**
+ * How long a clip may take to start or to finish in the session helper. The helper gives up on a
+ * clip start itself after 10 s; this only guards against a helper that stopped answering.
+ */
+export const clipAnswerTimeout = "15 seconds";
+
 /** kladd-capture's exit code for "permission denied" (EX_NOPERM). */
 const exitDenied = 77;
 

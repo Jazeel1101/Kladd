@@ -1,10 +1,10 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import { ScreenCapture, SessionCapture } from "@kladd/core";
+import { ClipCapture, ScreenCapture, SessionCapture } from "@kladd/core";
 import { assert, describe, it } from "@effect/vitest";
 import { Context, Effect, Fiber, FileSystem, Layer } from "effect";
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
 import { TestClock } from "effect/testing";
-import { screenshotTimeout } from "./helper";
+import { clipAnswerTimeout, screenshotTimeout } from "./helper";
 import { ScreenCaptureDarwin } from "./ScreenCaptureDarwin";
 import { SessionCaptureDarwin } from "./SessionCaptureDarwin";
 
@@ -115,5 +115,25 @@ describe("ScreenCaptureDarwin.screenshot", () => {
         fakeHelper('[ "$cmd" = screenshot ] && echo "screenshot-failed $rest" || true'),
       ),
     ),
+  );
+});
+
+describe("SessionCaptureDarwin clips", () => {
+  it.effect("give up on a session helper that stops answering, so the session can stop", () =>
+    Effect.gen(function* () {
+      const dir = yield* FakeDir;
+      const session = yield* (yield* SessionCapture).start(dir);
+      const starting = yield* Effect.forkChild(
+        Effect.scoped((yield* ClipCapture).start(`${dir}/clip`)),
+      );
+      // Lets it send the command and start its timer, then lets the stop it sends time out too.
+      yield* Effect.yieldNow;
+      yield* TestClock.adjust(clipAnswerTimeout);
+      yield* Effect.yieldNow;
+      yield* TestClock.adjust(clipAnswerTimeout);
+      const failure = yield* Effect.flip(Fiber.join(starting));
+      assert.strictEqual(failure._tag, "ScreenCaptureFailed");
+      yield* session.stop;
+    }).pipe(Effect.scoped, Effect.provide(fakeHelper(":"))),
   );
 });

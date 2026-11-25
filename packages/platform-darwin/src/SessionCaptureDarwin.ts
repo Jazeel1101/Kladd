@@ -2,7 +2,7 @@ import { ClipCapture, SessionCapture } from "@kladd/core";
 import { excludedApps, ScreenCaptureFailed } from "@kladd/domain";
 import { type Cause, Context, Deferred, Effect, Layer, Option, Queue, Ref, Stream } from "effect";
 import { ChildProcessSpawner } from "effect/process";
-import { type CaptureHelper, screenshotTimeout, startCapture } from "./helper";
+import { type CaptureHelper, clipAnswerTimeout, screenshotTimeout, startCapture } from "./helper";
 
 /** What the session helper prints after "recording" (main.swift lists them). */
 export type SessionAnswer =
@@ -178,13 +178,22 @@ export const SessionCaptureDarwin = (helper: CaptureHelper) =>
         // Waits for the helper to finish the clip, so the next one starts clean.
         const stop = Effect.gen(function* () {
           if (!(yield* Deferred.isDone(waiters.ended))) yield* send("clip-stop");
-          yield* Deferred.await(waiters.ended);
+          yield* Deferred.await(waiters.ended).pipe(
+            Effect.timeoutOrElse({
+              duration: clipAnswerTimeout,
+              orElse: () => Effect.fail(failed("the session did not finish the clip in time")),
+            }),
+          );
         }).pipe(Effect.withSpan("SessionCaptureDarwin.stopClip"));
 
         yield* Effect.addFinalizer(() => Effect.ignore(stop));
         // The helper gives up on a clip with no first frame (clipFirstFrameWait in Clip.swift).
         yield* send(`clip-start ${dir}`);
         yield* Deferred.await(waiters.recording).pipe(
+          Effect.timeoutOrElse({
+            duration: clipAnswerTimeout,
+            orElse: () => Effect.fail(failed("the session did not start the clip in time")),
+          }),
           Effect.onInterrupt(() => Effect.ignore(stop)),
         );
         return { stop };

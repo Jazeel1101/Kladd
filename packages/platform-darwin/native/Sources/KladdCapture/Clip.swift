@@ -446,7 +446,7 @@ final class ClipAudio: NSObject, AVCaptureAudioDataOutputSampleBufferDelegate {
     }
     privacy.video = video
     video.onStreamStopped = { [weak self] in self?.restartVideo(after: videoRestartDelay) }
-    video.onFirstFrame = { time in DispatchQueue.main.async { self.started(at: time) } }
+    video.onFirstFrame = { [weak self] time in DispatchQueue.main.async { self?.started(at: time) } }
     video.onFailed = { [weak self] reason in self?.stop(failure: reason) }
     audio?.run()
     watchVideo(videoAttempt)
