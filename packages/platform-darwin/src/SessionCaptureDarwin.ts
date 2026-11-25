@@ -169,6 +169,10 @@ export const SessionCaptureDarwin = (helper: CaptureHelper) =>
         if (Option.isNone(running)) return yield* failed("no session is recording");
         if (dir.includes("\n")) return yield* failed(`bad clip folder: ${dir}`);
         const { send, clip } = running.value;
+        // A clip the helper never confirmed as ended could still answer, and would end this one.
+        if (Option.isSome(yield* Ref.get(clip))) {
+          return yield* failed("the last clip has not finished");
+        }
         const waiters: ClipWaiters = {
           recording: yield* Deferred.make<void, ScreenCaptureFailed>(),
           ended: yield* Deferred.make<void, ScreenCaptureFailed>(),

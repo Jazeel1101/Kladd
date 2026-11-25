@@ -1,5 +1,6 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { ClipCapture, ScreenCapture, SessionCapture } from "@kladd/core";
+import { ScreenCaptureFailed } from "@kladd/domain";
 import { assert, describe, it } from "@effect/vitest";
 import { Context, Effect, Fiber, FileSystem, Layer } from "effect";
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
@@ -133,6 +134,12 @@ describe("SessionCaptureDarwin clips", () => {
       yield* TestClock.adjust(clipAnswerTimeout);
       const failure = yield* Effect.flip(Fiber.join(starting));
       assert.strictEqual(failure._tag, "ScreenCaptureFailed");
+      // Its late answer could end the next clip, so none starts until the helper answers.
+      const next = yield* Effect.flip(Effect.scoped((yield* ClipCapture).start(`${dir}/next`)));
+      assert.deepStrictEqual(
+        next,
+        new ScreenCaptureFailed({ reason: "the last clip has not finished" }),
+      );
       yield* session.stop;
     }).pipe(Effect.scoped, Effect.provide(fakeHelper(":"))),
   );
