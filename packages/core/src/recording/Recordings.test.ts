@@ -1,9 +1,11 @@
 import { assert, describe, it } from "@effect/vitest";
+import { ScreenCaptureFailed } from "@kladd/domain";
 import { Effect, Layer, Option, Ref } from "effect";
 import { LoggingOverlay } from "../logging/LoggingOverlay";
 import type { ScreenCapture } from "../ports/ScreenCapture";
 import {
   AppAdaptersTest,
+  ClipCaptureTest,
   FocusTrackerLog,
   FocusTrackerTest,
   IdsTest,
@@ -11,18 +13,37 @@ import {
   OverlayWindowsTest,
   RecordingStoreTest,
   ScreenCaptureTest,
+  SessionCaptureLog,
+  SessionCaptureTest,
+  TranscriberLog,
+  TranscriberTest,
 } from "../testing";
+import { Clips } from "./Clips";
 import { Recordings } from "./Recordings";
 
 const withCapture = (
   capture: Layer.Layer<ScreenCapture>,
   focus: ReturnType<typeof FocusTrackerTest> = FocusTrackerTest(),
+  session: ReturnType<typeof SessionCaptureTest> = SessionCaptureTest(),
 ) =>
   Recordings.layer.pipe(
-    Layer.provide([capture, RecordingStoreTest, IdsTest]),
+    Layer.provide([capture, IdsTest]),
     Layer.provide(LoggingOverlay.layer),
-    Layer.provideMerge(Layer.mergeAll(focus, AppAdaptersTest(), OverlayWindowsTest)),
+    Layer.provideMerge(Clips.layer),
+    Layer.provideMerge(
+      Layer.mergeAll(
+        focus,
+        AppAdaptersTest(),
+        OverlayWindowsTest,
+        session,
+        TranscriberTest(),
+        ClipCaptureTest(),
+        RecordingStoreTest,
+      ),
+    ),
   );
+
+const broken = new ScreenCaptureFailed({ reason: "helper crashed" });
 
 /** Accessibility is missing, and the user leaves its prompt open. */
 const promptLeftOpen = FocusTrackerTest(undefined, {
@@ -132,6 +153,60 @@ describe("Recordings", () => {
       const recordings = yield* Recordings;
       const error = yield* Effect.flip(recordings.stop);
       assert.strictEqual(error._tag, "NoActiveRecording");
+    }).pipe(Effect.provide(withCapture(ScreenCaptureTest.granted))),
+  );
+
+  it.effect("start captures into the session folder, and stop stops it", () =>
+    Effect.gen(function* () {
+      const recordings = yield* Recordings;
+      yield* recordings.start;
+      yield* recordings.stop;
+      assert.deepStrictEqual(yield* Ref.get(yield* SessionCaptureLog), {
+        started: ["/recordings/session-1"],
+        stopped: 1,
+      });
+    }).pipe(Effect.provide(withCapture(ScreenCaptureTest.granted))),
+  );
+
+  it.effect("start fails and leaves nothing recording when the capture can't start", () =>
+    Effect.gen(function* () {
+      const recordings = yield* Recordings;
+      const error = yield* Effect.flip(recordings.start);
+      assert.strictEqual(error._tag, "ScreenCaptureFailed");
+      assert.isTrue(Option.isNone(yield* recordings.active));
+      // The next start gets a new session instead of RecordingAlreadyActive.
+      const retry = yield* Effect.flip(recordings.start);
+      assert.strictEqual(retry._tag, "ScreenCaptureFailed");
+    }).pipe(
+      Effect.provide(
+        withCapture(ScreenCaptureTest.granted, undefined, SessionCaptureTest({ start: broken })),
+      ),
+    ),
+  );
+
+  it.effect("stop still stops and opens the logging overlay when the capture fails to stop", () =>
+    Effect.gen(function* () {
+      const recordings = yield* Recordings;
+      const session = yield* recordings.start;
+      assert.deepStrictEqual(yield* recordings.stop, session);
+      assert.isTrue(Option.isNone(yield* recordings.active));
+      const shown = yield* Ref.get(yield* OverlayWindowsLog);
+      assert.deepStrictEqual(
+        shown.map((s) => s.kind),
+        ["logging"],
+      );
+    }).pipe(
+      Effect.provide(
+        withCapture(ScreenCaptureTest.granted, undefined, SessionCaptureTest({ stop: broken })),
+      ),
+    ),
+  );
+
+  it.effect("prepares transcription in the background when it starts", () =>
+    Effect.gen(function* () {
+      yield* Recordings;
+      yield* Effect.yieldNow;
+      assert.strictEqual((yield* Ref.get(yield* TranscriberLog)).prepared, 1);
     }).pipe(Effect.provide(withCapture(ScreenCaptureTest.granted))),
   );
 });

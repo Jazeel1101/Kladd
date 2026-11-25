@@ -4,7 +4,13 @@
  */
 import {
   type AccessibilityPermission,
+  type ClipInfo,
+  clipName,
+  clipsFolder,
   FocusTrackingFailed,
+  type ScreenCaptureFailed,
+  type SessionInfo,
+  type TranscriptionFailed,
   RecordingSessionId,
   ScreenCapturePermissionDenied,
   ScreenshotId,
@@ -19,12 +25,15 @@ import {
 } from "@kladd/domain";
 import { Context, Effect, Layer, Option, Ref, Stream } from "effect";
 import { AppAdapters } from "../ports/AppAdapters";
+import { ClipCapture } from "../ports/ClipCapture";
 import { FocusTracker } from "../ports/FocusTracker";
 import { Ids } from "../ports/Ids";
 import { OverlayWindows } from "../ports/OverlayWindows";
 import { RecordingStore } from "../ports/RecordingStore";
 import { ScreenCapture } from "../ports/ScreenCapture";
 import { ScreenshotFiles } from "../ports/ScreenshotFiles";
+import { SessionCapture } from "../ports/SessionCapture";
+import { Transcriber } from "../ports/Transcriber";
 
 const screenCaptureTest = (
   permission: ScreenCapturePermission,
@@ -61,15 +70,178 @@ export const ScreenCaptureTest = {
   grantedRevokedOnRequest: screenCaptureTest("granted", "denied"),
 };
 
-/** In-memory store. Starts empty. */
+/**
+ * Writes nothing; starts and stops at once, or after running `start` or `stop`: Effect.sleep for
+ * the helper's latency, Effect.never for a start that never reports ready, a failure for one that
+ * fails.
+ */
+export const ClipCaptureTest = (
+  wait: {
+    readonly start?: Effect.Effect<void, ScreenCaptureFailed>;
+    readonly stop?: Effect.Effect<void>;
+  } = {},
+) =>
+  Layer.succeed(
+    ClipCapture,
+    ClipCapture.of({
+      start: () => Effect.as(wait.start ?? Effect.void, { stop: wait.stop ?? Effect.void }),
+    }),
+  );
+
+/** What SessionCaptureTest saw. Read it with `yield* SessionCaptureLog` in a test. */
+export class SessionCaptureLog extends Context.Service<
+  SessionCaptureLog,
+  Ref.Ref<{ readonly started: ReadonlyArray<string>; readonly stopped: number }>
+>()("kladd/core/testing/SessionCaptureLog") {}
+
+/**
+ * Starts and stops at once and writes nothing; logs the folders it started in, and stops, in
+ * SessionCaptureLog. Given a `start` or `stop` failure, that step fails with it.
+ */
+export const SessionCaptureTest = (
+  fail: {
+    readonly start?: ScreenCaptureFailed;
+    readonly stop?: ScreenCaptureFailed;
+  } = {},
+) =>
+  Layer.unwrap(
+    Effect.gen(function* () {
+      const log = yield* Ref.make<{ started: ReadonlyArray<string>; stopped: number }>({
+        started: [],
+        stopped: 0,
+      });
+      const stop = Ref.update(log, (l) => ({ ...l, stopped: l.stopped + 1 })).pipe(
+        Effect.andThen(fail.stop ? Effect.fail(fail.stop) : Effect.void),
+      );
+      const capture = SessionCapture.of({
+        start: (dir) =>
+          fail.start
+            ? Effect.fail(fail.start)
+            : Ref.update(log, (l) => ({ ...l, started: [...l.started, dir] })).pipe(
+                Effect.as({ stop }),
+              ),
+      });
+      return Layer.mergeAll(
+        Layer.succeed(SessionCapture, capture),
+        Layer.succeed(SessionCaptureLog, log),
+      );
+    }),
+  );
+
+/** What TranscriberTest saw: the audio file of every transcribe. Read it with `yield* TranscriberLog`. */
+export class TranscriberLog extends Context.Service<
+  TranscriberLog,
+  Ref.Ref<{ readonly prepared: number; readonly transcribed: ReadonlyArray<string> }>
+>()("kladd/core/testing/TranscriberLog") {}
+
+/**
+ * The model is always there; writes no transcript and detects `language` (default "no"). Given a
+ * TranscriptionFailed, every transcribe fails with it.
+ */
+export const TranscriberTest = (language: string | TranscriptionFailed = "no") =>
+  Layer.unwrap(
+    Effect.gen(function* () {
+      const log = yield* Ref.make<{ prepared: number; transcribed: ReadonlyArray<string> }>({
+        prepared: 0,
+        transcribed: [],
+      });
+      const transcriber = Transcriber.of({
+        prepare: Ref.update(log, (l) => ({ ...l, prepared: l.prepared + 1 })),
+        transcribe: (audio) =>
+          Ref.update(log, (l) => ({ ...l, transcribed: [...l.transcribed, audio] })).pipe(
+            Effect.andThen(
+              typeof language === "string" ? Effect.succeed(language) : Effect.fail(language),
+            ),
+          ),
+      });
+      return Layer.mergeAll(
+        Layer.succeed(Transcriber, transcriber),
+        Layer.succeed(TranscriberLog, log),
+      );
+    }),
+  );
+
+/**
+ * In-memory store. Starts empty. Folders are `/recordings/<id>`, clips `/recordings/<id>/clips/001`,
+ * with no sound and no live files; RecordingStoreFile's tests cover reading real ones.
+ */
 export const RecordingStoreTest = Layer.effect(
   RecordingStore,
   Effect.gen(function* () {
     const ref = yield* Ref.make(Option.none<RecordingSession>());
+    const infos = yield* Ref.make(new Map<string, SessionInfo>());
+    const overviews = yield* Ref.make(new Set<string>());
+    const clips = yield* Ref.make(new Map<string, ClipInfo>());
+    const folderOf = (id: string) => `/recordings/${id}`;
+    const info = (folder: string) =>
+      Ref.get(infos).pipe(
+        Effect.flatMap((all) => Effect.fromNullishOr(all.get(folder))),
+        Effect.orDie,
+      );
     return RecordingStore.of({
       active: Ref.get(ref),
-      save: (session) => Ref.set(ref, Option.some(session)),
+      save: Effect.fn("RecordingStoreTest.save")(function* (session: RecordingSession) {
+        const folder = folderOf(session.id);
+        const created: SessionInfo = {
+          id: session.id,
+          startedAt: session.startedAt,
+          stoppedAt: null,
+          appVersion: "0.0.0-test",
+          layout: 1,
+        };
+        yield* Ref.update(infos, (all) => new Map(all).set(folder, created));
+        yield* Ref.set(ref, Option.some(session));
+        return folder;
+      }),
       clear: Ref.set(ref, Option.none()),
+      unfinished: Effect.gen(function* () {
+        const written = yield* Ref.get(overviews);
+        return [...(yield* Ref.get(infos)).keys()].filter((folder) => !written.has(folder));
+      }),
+      folder: (id) =>
+        Ref.get(infos).pipe(
+          Effect.map((all) => Option.some(folderOf(id)).pipe(Option.filter((f) => all.has(f)))),
+        ),
+      updateInfo: (folder, update) =>
+        Effect.flatMap(info(folder), (current) =>
+          Ref.update(infos, (all) => new Map(all).set(folder, update(current))),
+        ),
+      createClip: (folder, created) =>
+        Ref.modify(clips, (all) => {
+          const inFolder = [...all.keys()].filter((clip) => clip.startsWith(`${folder}/`));
+          const clip = `${folder}/${clipsFolder}/${clipName(inFolder.length + 1)}`;
+          return [clip, new Map(all).set(clip, created)];
+        }),
+      removeClip: (clip) =>
+        Ref.update(clips, (all) => {
+          const left = new Map(all);
+          left.delete(clip);
+          return left;
+        }),
+      updateClip: (clip, update) =>
+        Ref.update(clips, (all) => {
+          const current = all.get(clip);
+          return current === undefined ? all : new Map(all).set(clip, update(current));
+        }),
+      untranscribed: () => Effect.succeed([]),
+      read: (folder) =>
+        Effect.all({ session: info(folder), all: Ref.get(clips) }).pipe(
+          Effect.map(({ session, all }) => ({
+            session,
+            events: [],
+            files: [],
+            clips: [...all]
+              .filter(([clip]) => clip.startsWith(`${folder}/`))
+              .map(([clip, clipInfo]) => ({
+                name: clip.slice(clip.lastIndexOf("/") + 1),
+                info: clipInfo,
+                sound: false,
+                segments: null,
+                marks: 0,
+              })),
+          })),
+        ),
+      writeOverview: (folder) => Ref.update(overviews, (all) => new Set(all).add(folder)),
     });
   }),
 );

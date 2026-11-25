@@ -1,10 +1,11 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { Generic, appAdapters } from "@kladd/adapters";
-import { AppAdapters, LoggingOverlay, Recordings, Screenshots } from "@kladd/core";
+import { AppAdapters, Clips, LoggingOverlay, Recordings, Screenshots } from "@kladd/core";
 import { IdsLive, RecordingStoreFile, ScreenshotFilesDir, StorageConfig } from "@kladd/infra";
 import { app } from "electron";
 import { Layer } from "effect";
 import { ElectronAppLive } from "./app";
+import { ClipShortcutLive } from "./clipShortcut";
 import { PillMenuLive } from "./pillMenu";
 import { PlatformLive } from "./platform";
 import { RpcServerLive } from "./rpc/server";
@@ -19,7 +20,7 @@ import { OverlayWindowsLive, PillLive } from "./windows";
  */
 const StorageConfigLive = Layer.succeed(
   StorageConfig,
-  StorageConfig.of({ dataDir: app.getPath("userData") }),
+  StorageConfig.of({ dataDir: app.getPath("userData"), appVersion: app.getVersion() }),
 );
 
 const AppAdaptersLive = Layer.succeed(
@@ -31,7 +32,7 @@ const AppAdaptersLive = Layer.succeed(
 const ElectronPortsLive = OverlayWindowsLive.pipe(Layer.provide(ElectronAppLive));
 
 const CoreLive = Layer.mergeAll(Recordings.layer, Screenshots.layer).pipe(
-  Layer.provideMerge(LoggingOverlay.layer),
+  Layer.provideMerge(Layer.mergeAll(LoggingOverlay.layer, Clips.layer)),
   Layer.provideMerge(ScreenshotFilesDir),
   Layer.provide([PlatformLive, RecordingStoreFile, IdsLive, AppAdaptersLive]),
   Layer.provideMerge(ElectronPortsLive),
@@ -44,5 +45,6 @@ export const MainLive = Layer.mergeAll(
   UpdaterLive,
   RpcServerLive,
   ScreenshotShortcutLive,
+  ClipShortcutLive,
   ScreenshotProtocolLive,
 ).pipe(Layer.provide(PillMenuLive), Layer.provideMerge(CoreLive));

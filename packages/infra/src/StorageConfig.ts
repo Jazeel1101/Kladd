@@ -5,5 +5,7 @@ export class StorageConfig extends Context.Service<
   StorageConfig,
   {
     readonly dataDir: string;
+    /** Kladd's version, written into every session folder's `session.json`. */
+    readonly appVersion: string;
   }
 >()("kladd/infra/StorageConfig") {}

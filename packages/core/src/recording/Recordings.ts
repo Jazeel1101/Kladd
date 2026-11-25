@@ -9,8 +9,11 @@ import {
   Context,
   DateTime,
   Effect,
+  Exit,
   Layer,
   Option,
+  Ref,
+  Scope,
   Semaphore,
   type Stream,
   SubscriptionRef,
@@ -22,9 +25,25 @@ import { FocusTracker } from "../ports/FocusTracker";
 import { Ids } from "../ports/Ids";
 import { RecordingStore } from "../ports/RecordingStore";
 import { ScreenCapture } from "../ports/ScreenCapture";
+import { SessionCapture, type SessionCaptureHandle } from "../ports/SessionCapture";
+import { Transcriber } from "../ports/Transcriber";
+import { Clips } from "./Clips";
+import { finishSession } from "./finishSession";
+
+/** The capture writing the active recording's session folder. */
+interface Running {
+  readonly folder: string;
+  readonly handle: SessionCaptureHandle;
+  readonly scope: Scope.Closeable;
+}
 
 /**
- * Use case: start, stop and watch recordings. Stopping a recording starts logging mode.
+ * Use case: start, stop and watch work sessions (GLOSSARY: "økt"). Each captures into its own
+ * session folder, finished in the background after stop (finishSession); clips (Clips) can be
+ * taken while it runs. Stopping a recording starts logging mode.
+ * A folder left unfinished, such as by a crash or by a stop before the model was ready, is finished
+ * when Kladd opens and once the model is ready, when the active session's stopped clips are
+ * transcribed too; a crashed recording is not resumed.
  * A use case depends on ports (../ports) and other use cases, never on infra or platform code.
  */
 export class Recordings extends Context.Service<
@@ -33,12 +52,16 @@ export class Recordings extends Context.Service<
     /**
      * Asks for screen capture permission first if Kladd doesn't have it. Once recording, asks for
      * Accessibility in the background (optional: it places the logging overlay next to the text).
+     * Fails, with nothing left recording, if the session capture can't start.
      */
     readonly start: Effect.Effect<
       RecordingSession,
       RecordingAlreadyActive | ScreenCapturePermissionDenied | ScreenCaptureFailed
     >;
-    /** Stops the active recording and opens the logging overlay. */
+    /**
+     * Stops the active recording's clip, then the recording, and opens the logging overlay. Always
+     * stops: a capture that fails to finish is logged, and the folder is finished from what it wrote.
+     */
     readonly stop: Effect.Effect<RecordingSession, NoActiveRecording>;
     readonly active: Effect.Effect<Option.Option<RecordingSession>>;
     /** The active recording now, then on every start and stop. */
@@ -49,16 +72,72 @@ export class Recordings extends Context.Service<
     Recordings,
     Effect.gen(function* () {
       const capture = yield* ScreenCapture;
+      const sessionCapture = yield* SessionCapture;
+      const transcriber = yield* Transcriber;
+      const clips = yield* Clips;
       const focus = yield* FocusTracker;
       const store = yield* RecordingStore;
       const ids = yield* Ids;
       const logging = yield* LoggingOverlay;
-      const current = yield* SubscriptionRef.make(yield* store.active);
+      const current = yield* SubscriptionRef.make(Option.none<RecordingSession>());
+      const running = yield* Ref.make(Option.none<Running>());
       // Start and stop check, then change, the active recording; one at a time so they can't interleave.
       const exclusive = Semaphore.withPermit(yield* Semaphore.make(1));
       // The Accessibility prompt outlives start, and only one is shown at a time.
       const layerScope = yield* Effect.scope;
       const asking = yield* Semaphore.make(1);
+
+      // Transcription and overview outlive stop, and never fail it: their failures are logged.
+      const finishInBackground = (folder: string) =>
+        Effect.gen(function* () {
+          const stoppedAt = yield* DateTime.now;
+          yield* store.updateInfo(folder, (info) => ({ ...info, stoppedAt }));
+          yield* finishSession(folder).pipe(
+            Effect.provideService(RecordingStore, store),
+            Effect.provideService(Clips, clips),
+          );
+        }).pipe(
+          Effect.ignoreCause({ log: "Warn", message: "Could not finish the session folder" }),
+          Effect.forkIn(layerScope),
+        );
+
+      // A folder is finished once it has overview.md and a transcript for every clip with sound;
+      // nothing else marks it, so a crash or quit before finishSession leaves it to the next launch. Each
+      // runs once per launch: one that keeps failing waits for the next.
+      const finishUnfinished = Effect.fn("Recordings.finishUnfinished")(function* (
+        needsModel: boolean,
+      ) {
+        for (const folder of yield* store.unfinished) {
+          // save marks a recording active before its capture starts. Its overview waits for stop,
+          // but its stopped clips needn't wait for their transcripts.
+          const active = yield* store.active;
+          if (Option.isSome(active)) {
+            const recording = yield* store.folder(active.value.id);
+            if (Option.contains(recording, folder)) {
+              if (needsModel) yield* clips.transcribe(folder);
+              continue;
+            }
+          }
+          if ((yield* store.untranscribed(folder)).length > 0 !== needsModel) continue;
+          yield* finishSession(folder).pipe(
+            Effect.provideService(RecordingStore, store),
+            Effect.provideService(Clips, clips),
+            Effect.ignoreCause({ log: "Warn", message: "Could not finish the session folder" }),
+          );
+        }
+      });
+
+      // A recording a crash left active is no longer recording; it is finished below, as it is,
+      // without a stop time.
+      if (Option.isSome(yield* store.active)) yield* store.clear;
+      yield* finishUnfinished(false).pipe(Effect.forkIn(layerScope));
+
+      // Downloads the Whisper model if it is missing, then transcribes what was saved without it.
+      yield* transcriber.prepare.pipe(
+        Effect.andThen(finishUnfinished(true)),
+        Effect.ignoreCause({ log: "Warn", message: "Could not prepare transcription" }),
+        Effect.forkIn(layerScope),
+      );
 
       const start = Effect.gen(function* () {
         const active = yield* SubscriptionRef.get(current);
@@ -67,26 +146,56 @@ export class Recordings extends Context.Service<
         }
         // Inside the permit, so a second start waits for this one's permission prompt.
         yield* requireScreenCapture.pipe(Effect.provideService(ScreenCapture, capture));
-        const session = new RecordingSession({
+        const recording = new RecordingSession({
           id: yield* ids.recordingSessionId,
           startedAt: yield* DateTime.now,
         });
-        yield* store.save(session);
-        yield* SubscriptionRef.set(current, Option.some(session));
+        const folder = yield* store.save(recording);
+        const scope = yield* Scope.make();
+        const handle = yield* sessionCapture.start(folder).pipe(
+          Scope.provide(scope),
+          // Nothing records, so nothing may look active; the folder is kept and finished.
+          Effect.onError((cause) =>
+            Effect.all([
+              Scope.close(scope, Exit.failCause(cause)),
+              store.clear,
+              finishInBackground(folder),
+            ]),
+          ),
+        );
+        yield* Ref.set(running, Option.some({ folder, handle, scope }));
+        yield* clips.begin(folder);
+        yield* SubscriptionRef.set(current, Option.some(recording));
         yield* askForAccessibility.pipe(
           Effect.provideService(FocusTracker, focus),
           Semaphore.withPermitsIfAvailable(asking, 1),
           Effect.forkIn(layerScope),
         );
-        return session;
+        return recording;
       }).pipe(exclusive, Effect.withSpan("Recordings.start"));
 
       const stop = Effect.gen(function* () {
         const stopped = yield* Effect.gen(function* () {
           const active = yield* SubscriptionRef.get(current);
           if (Option.isNone(active)) return yield* new NoActiveRecording({});
-          yield* store.clear;
           yield* SubscriptionRef.set(current, Option.none());
+          // Inside the permit, so a new recording can't start before this capture has stopped.
+          const capturing = yield* Ref.getAndSet(running, Option.none());
+          yield* clips.end;
+          if (Option.isSome(capturing)) {
+            const { folder, handle, scope } = capturing.value;
+            yield* handle.stop.pipe(
+              Effect.catchTag("ScreenCaptureFailed", (error) =>
+                Effect.logWarning("The session capture did not stop cleanly", error.reason),
+              ),
+            );
+            yield* Scope.close(scope, Exit.void);
+            // Cleared only now: until then finishUnfinished leaves the folder alone.
+            yield* store.clear;
+            yield* finishInBackground(folder);
+          } else {
+            yield* store.clear;
+          }
           return active.value;
         }).pipe(exclusive);
         yield* logging.open;
