@@ -110,7 +110,6 @@ describe("RecordingStoreFile session folder", () => {
       );
       const input = yield* store.read(folder);
       assert.deepStrictEqual(input.events, [start, focus]);
-      assert.deepStrictEqual(input.files, []);
       assert.deepStrictEqual(input.clips, []);
       assert.strictEqual(input.session.id, session.id);
     }).pipe(Effect.provide(inTempDir)),

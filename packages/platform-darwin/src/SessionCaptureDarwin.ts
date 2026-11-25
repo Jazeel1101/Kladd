@@ -1,10 +1,5 @@
 import { ClipCapture, SessionCapture } from "@kladd/core";
-import {
-  deniedPathFragments,
-  excludedApps,
-  noisyPathFragments,
-  ScreenCaptureFailed,
-} from "@kladd/domain";
+import { excludedApps, ScreenCaptureFailed } from "@kladd/domain";
 import { type Cause, Context, Deferred, Effect, Layer, Option, Queue, Ref, Stream } from "effect";
 import { ChildProcessSpawner } from "effect/process";
 import { type CaptureHelper, screenshotTimeout, startCapture } from "./helper";
@@ -67,7 +62,7 @@ export class SessionHelper extends Context.Service<
  * macOS SessionCapture and ClipCapture: one long-running `kladd-capture session` per recording
  * (../native/Sources/KladdCapture/Session.swift), which also records its clips (Clip.swift) and
  * takes screenshots (SessionHelper) on commands sent to its stdin: two helpers can't both use
- * ScreenCaptureKit. The privacy lists live in domain, so they are passed to the helper as JSON.
+ * ScreenCaptureKit. The excluded apps live in domain, so they are passed to the helper as JSON.
  * See docs/internals/session-capture.md.
  */
 export const SessionCaptureDarwin = (helper: CaptureHelper) =>
@@ -89,8 +84,6 @@ export const SessionCaptureDarwin = (helper: CaptureHelper) =>
             String(helper.excludePid),
             "--exclude-apps",
             JSON.stringify(excludedApps),
-            "--deny-paths",
-            JSON.stringify([...deniedPathFragments, ...noisyPathFragments]),
           ],
           Stream.fromQueue(stdin).pipe(Stream.encodeText),
         );

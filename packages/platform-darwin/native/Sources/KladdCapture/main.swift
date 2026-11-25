@@ -7,7 +7,7 @@
 //   kladd-capture screenshot --out <file.png> [--exclude-pid pid]
 //   kladd-capture record --out <file.mov> [--exclude-pid pid]
 //       prints "recording" once frames are written; stops on SIGINT, SIGTERM or stdin closing.
-//   kladd-capture session --dir <folder> [--exclude-pid pid] [--exclude-apps json] [--deny-paths json]
+//   kladd-capture session --dir <folder> [--exclude-pid pid] [--exclude-apps json]
 //       writes a session folder's live files (Session.swift); prints and stops like record. It also
 //       records clips (Clip.swift) and takes screenshots, as the only ScreenCaptureKit user then, on stdin lines:
 //         clip-start <clip folder>   answers "clip-recording" at the first frame, then one of the two below

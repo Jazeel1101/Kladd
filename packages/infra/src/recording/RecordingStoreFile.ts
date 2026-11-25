@@ -1,7 +1,6 @@
 import { RecordingStore, type UntranscribedClip } from "@kladd/core";
 import {
   ClipInfo,
-  FileChange,
   Mark,
   type OverviewClip,
   RecordingSession,
@@ -25,7 +24,6 @@ const SessionInfoJson = Schema.fromJsonString(Schema.toCodecJson(SessionInfo));
 const ClipInfoJson = Schema.fromJsonString(Schema.toCodecJson(ClipInfo));
 
 const decodeEvent = Schema.decodeUnknownOption(Schema.fromJsonString(TimelineEvent));
-const decodeFile = Schema.decodeUnknownOption(Schema.fromJsonString(FileChange));
 const decodeSegment = Schema.decodeUnknownOption(Schema.fromJsonString(TranscriptSegment));
 const decodeMark = Schema.decodeUnknownOption(Schema.fromJsonString(Mark));
 
@@ -212,7 +210,6 @@ export const RecordingStoreFile = Layer.effect(
       return {
         session: yield* readInfo(folder),
         events: yield* readLines(path.join(folder, sessionFiles.timeline), decodeEvent),
-        files: yield* readLines(path.join(folder, sessionFiles.files), decodeFile),
         clips,
       };
     }, Effect.orDie);

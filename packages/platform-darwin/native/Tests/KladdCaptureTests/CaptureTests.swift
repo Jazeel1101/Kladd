@@ -10,8 +10,7 @@ import Testing
 func tempDir() throws -> URL {
   let dir = FileManager.default.temporaryDirectory.appendingPathComponent("kladd-test-\(UUID().uuidString)")
   try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-  // FSEvents reports /private/var, not /var.
-  return URL(fileURLWithPath: String(cString: realpath(dir.path, nil)))
+  return dir
 }
 
 /// A gray 4:2:0 frame like ScreenCaptureKit's, stamped `time`.
@@ -94,24 +93,6 @@ let step = CMTime(value: 1, timescale: videoFps)
   let times = try await sampleTimes(url)
   #expect(times.count == 3)
   #expect(abs(times[1] - (later - start).seconds) < 0.01)
-}
-
-@Test func stopReportsChangesNotYetDelivered() async throws {
-  let dir = try tempDir()
-  let seen = try await MainActor.run {
-    var seen: [String] = []
-    let watcher = FileWatcher(root: dir.path, denied: []) { seen.append($0) }
-    return (watcher, { seen })
-  }
-  try await Task.sleep(for: .milliseconds(300))
-  let first = dir.appendingPathComponent("first.txt")
-  let second = dir.appendingPathComponent("second.txt")
-  try Data("a".utf8).write(to: first)
-  try await Task.sleep(for: .milliseconds(200))
-  try Data("b".utf8).write(to: second)
-  await withCheckedContinuation { stopped in DispatchQueue.main.async { seen.0.stop { stopped.resume() } } }
-  let paths = await MainActor.run { seen.1() }
-  #expect(paths.contains(first.path) && paths.contains(second.path))
 }
 
 @Test func sessionCommandsAreOneLineEach() {

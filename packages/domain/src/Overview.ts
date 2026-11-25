@@ -5,7 +5,6 @@ import {
   frameName,
   sessionFiles,
   type ClipInfo,
-  type FileChange,
   type SessionInfo,
   type TimelineEvent,
 } from "./SessionFolder";
@@ -27,7 +26,6 @@ export interface OverviewClip {
 export interface OverviewInput {
   readonly session: SessionInfo;
   readonly events: ReadonlyArray<TimelineEvent>;
-  readonly files: ReadonlyArray<FileChange>;
   /** In name order. */
   readonly clips: ReadonlyArray<OverviewClip>;
 }
@@ -147,7 +145,6 @@ export const segmentsOf = (events: ReadonlyArray<TimelineEvent>): ReadonlyArray<
 
 /** Caps on what could grow without bound; the full data stays in the files the text names. */
 const maxFramesPerRow = 6;
-const maxFilesPerFolder = 8;
 
 const clock = (seconds: number): string => {
   const s = Math.floor(seconds);
@@ -157,8 +154,6 @@ const clock = (seconds: number): string => {
 };
 
 const cell = (text: string): string => text.replace(/\s+/g, " ").replaceAll("|", "\\|").trim();
-
-const dirname = (path: string): string => path.slice(0, Math.max(path.lastIndexOf("/"), 1));
 
 const names = (clips: ReadonlyArray<OverviewClip>): string => clips.map((c) => c.name).join(", ");
 
@@ -226,18 +221,6 @@ export const renderOverview = (input: OverviewInput): string => {
     return `| ${clip.name} | ${from}–${to} | ${clipsFolder}/${clip.name}/ | ${clip.sound ? "yes" : "no"} | ${transcript} | ${clip.marks} |`;
   });
 
-  const byFolder = Map.groupBy(
-    input.files.toSorted((a, b) => a.path.localeCompare(b.path)),
-    (file) => dirname(file.path),
-  );
-  const folders = [...byFolder].map(([folder, files]) => {
-    const listed = files
-      .slice(0, maxFilesPerFolder)
-      .map((file) => `- ${file.path.slice(folder.length + 1)} (t=${Math.floor(file.t)})`);
-    const more = files.length - maxFilesPerFolder;
-    return [`${folder}/`, ...listed, ...(more > 0 ? [`- +${more} more`] : [])].join("\n");
-  });
-
   const f = sessionFiles;
   const c = clipFiles;
   return [
@@ -251,7 +234,7 @@ export const renderOverview = (input: OverviewInput): string => {
     "- One clock: `t` is seconds since the session started, in every file and file name outside `clips/`.",
     `- \`${f.timeline}\`: every event, one JSON object per line, with \`type\` start, stop, focus, frame, idle, active or activity (key and click counts every 10 s, never what was typed). Lines can be out of \`t\` order; sort by \`t\`.`,
     `- \`${f.frames}/<t>.jpg\`: keyframes (6-digit \`t\`, e.g. ${frameName(65)}.jpg is t=65); \`${f.frames}/<t>.txt\` is its OCR text, missing when OCR failed. \`${f.focus}/<t>.json\`: the focused window at that keyframe.`,
-    `- \`${f.files}\`: changed files, \`{t, path}\` per line. \`${f.session}\`: start and stop time.`,
+    `- \`${f.session}\`: start and stop time.`,
     `- Use \`jq\` and \`grep\` on the \`.jsonl\` files, e.g. \`jq -c 'select(.type=="focus")' ${f.timeline}\`. There is no Python.`,
     "",
     "## Segments",
@@ -276,13 +259,6 @@ export const renderOverview = (input: OverviewInput): string => {
           "| --- | --- | --- | --- | --- | --- |",
           ...clipRows,
         ]),
-    "",
-    "## Files changed",
-    "",
-    input.files.length === 0
-      ? "None."
-      : `${input.files.length} files, by folder, with the \`t\` each first changed. At most ${maxFilesPerFolder} per folder; all of them are in \`${f.files}\`.`,
-    ...(folders.length > 0 ? ["", folders.join("\n\n")] : []),
     "",
   ].join("\n");
 };

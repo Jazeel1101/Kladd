@@ -9,7 +9,7 @@ export interface SessionCaptureHandle {
 
 /**
  * Port: writes the live files of a session folder (GLOSSARY: "opptaksmappe") while a recording
- * runs: timeline, changed files, keyframes with OCR, and focus. Implemented per OS in
+ * runs: timeline, keyframes with OCR, and focus. Implemented per OS in
  * packages/platform-<os>. Test double: SessionCaptureTest in ../testing.
  */
 export class SessionCapture extends Context.Service<

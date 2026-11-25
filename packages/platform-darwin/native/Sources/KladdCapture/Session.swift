@@ -30,10 +30,6 @@ let changeShare = 0.01
 /// How long stop waits for OCR still running; a frame whose OCR has not finished has no text file.
 let ocrStopWait: TimeInterval = 10
 
-/// fseventsd hands a change to the watcher up to about a second after it happened, and
-/// FSEventStreamFlushSync does not hurry it, so stop keeps watching this long.
-let fileEventsGrace: TimeInterval = 1.5
-
 func writeJPEG(_ image: CGImage, to url: URL) -> Bool {
   guard let destination = CGImageDestinationCreateWithURL(url as CFURL, UTType.jpeg.identifier as CFString, 1, nil)
   else { return false }
@@ -73,68 +69,6 @@ func grayscale(_ image: CGImage) -> [UInt8]? {
 func changedNoticeably(_ a: [UInt8], _ b: [UInt8]) -> Bool {
   let moved = zip(a, b).reduce(0) { $0 + (abs(Int($1.0) - Int($1.1)) > changePixelDelta ? 1 : 0) }
   return Double(moved) / Double(a.count) > changeShare
-}
-
-
-// MARK: - Files
-
-/// files.jsonl: each file changed under `root`, once, minus paths containing a denied fragment.
-final class FileWatcher {
-  private var stream: FSEventStreamRef?
-  private var seen = Set<String>()
-  private let denied: [String]
-  private let changed: (String) -> Void
-
-  init(root: String, denied: [String], changed: @escaping (String) -> Void) {
-    self.denied = denied
-    self.changed = changed
-    var context = FSEventStreamContext(
-      version: 0, info: Unmanaged.passUnretained(self).toOpaque(), retain: nil, release: nil, copyDescription: nil)
-    let callback: FSEventStreamCallback = { _, info, count, paths, flags, _ in
-      guard let info else { return }
-      let watcher = Unmanaged<FileWatcher>.fromOpaque(info).takeUnretainedValue()
-      let list = Unmanaged<CFArray>.fromOpaque(paths).takeUnretainedValue() as? [String] ?? []
-      for index in 0..<min(count, list.count) {
-        watcher.saw(list[index], flags: flags[index])
-      }
-    }
-    stream = FSEventStreamCreate(
-      nil, callback, &context, [root] as CFArray, FSEventStreamEventId(kFSEventStreamEventIdSinceNow), 1,
-      FSEventStreamCreateFlags(
-        kFSEventStreamCreateFlagFileEvents | kFSEventStreamCreateFlagUseCFTypes | kFSEventStreamCreateFlagNoDefer))
-    guard let stream else {
-      logError("cannot watch \(root)")
-      return
-    }
-    FSEventStreamSetDispatchQueue(stream, .main)
-    if !FSEventStreamStart(stream) { logError("cannot watch \(root)") }
-  }
-
-  private func saw(_ path: String, flags: FSEventStreamEventFlags) {
-    guard flags & FSEventStreamEventFlags(kFSEventStreamEventFlagItemIsFile) != 0,
-      !seen.contains(path), !denied.contains(where: path.contains),
-      // Removed files, and the old name of a renamed one, are gone: nothing to read.
-      FileManager.default.fileExists(atPath: path)
-    else { return }
-    seen.insert(path)
-    changed(path)
-  }
-
-  /// Stops after `fileEventsGrace`, so changes made just before still arrive, then calls `done`.
-  func stop(done: @escaping () -> Void) {
-    DispatchQueue.main.asyncAfter(deadline: .now() + fileEventsGrace) {
-      self.stopNow()
-      done()
-    }
-  }
-
-  private func stopNow() {
-    guard let stream else { return }
-    FSEventStreamStop(stream)
-    FSEventStreamInvalidate(stream)
-    FSEventStreamRelease(stream)
-    self.stream = nil
-  }
 }
 
 // MARK: - Session
@@ -180,15 +114,10 @@ func secureFieldFocused(_ app: NSRunningApplication) -> Bool {
   var excludePid: pid_t? { privacy.excludePid }
   var excludedApps: Set<String> { privacy.excludedApps }
   let timeline: LineWriter
-  let files: LineWriter
   let accessibility = AXIsProcessTrusted()
-  var watcher: FileWatcher?
   var timer: Timer?
 
   var start: CMTime?
-  /// When `stop` was written: files that arrive during `fileEventsGrace` get this `t`.
-  var end: CMTime?
-  var stoppedAt: Date?
   var stopRequested = false
   var stopping = false
 
@@ -216,7 +145,6 @@ func secureFieldFocused(_ app: NSRunningApplication) -> Bool {
       try? FileManager.default.createDirectory(at: dir.appendingPathComponent(sub), withIntermediateDirectories: true)
     }
     timeline = LineWriter(dir.appendingPathComponent("timeline.jsonl"))
-    files = LineWriter(dir.appendingPathComponent("files.jsonl"))
   }
 
   func t(_ time: CMTime = hostNow()) -> Double {
@@ -226,7 +154,7 @@ func secureFieldFocused(_ app: NSRunningApplication) -> Bool {
 
   // MARK: Start and stop
 
-  func begin(deniedPaths: [String]) async {
+  func begin() async {
     // Without a display (the Mac is locked) the session starts anyway; `tick` keeps trying, and
     // until then there are no keyframes.
     do { try await privacy.load() } catch { logError("no keyframes for now: \(error)") }
@@ -238,15 +166,6 @@ func secureFieldFocused(_ app: NSRunningApplication) -> Bool {
     say("recording")
     keys = CGEventSource.counterForEventType(.combinedSessionState, eventType: .keyDown)
     clicks = clickCount()
-    watcher = FileWatcher(root: NSHomeDirectory(), denied: deniedPaths) { [weak self] path in
-      guard let self else { return }
-      // After stop, only changes made before it are still let in (FSEvents delivers them late).
-      if let stoppedAt = self.stoppedAt {
-        let changed = (try? FileManager.default.attributesOfItem(atPath: path))?[.modificationDate] as? Date
-        guard let changed, changed <= stoppedAt else { return }
-      }
-      self.files.write(["t": seconds(self.t(min(hostNow(), self.end ?? .positiveInfinity))), "path": path])
-    }
     timer = Timer.scheduledTimer(withTimeInterval: focusPollInterval, repeats: true) { [weak self] _ in
       MainActor.assumeIsolated { self?.tick() }
     }
@@ -295,7 +214,7 @@ func secureFieldFocused(_ app: NSRunningApplication) -> Bool {
     clipEnded = nil
   }
 
-  /// Writes `stop`, then finishes the clip, file watching and OCR, and exits.
+  /// Writes `stop`, then finishes the clip and OCR, and exits.
   func stop() {
     stopRequested = true
     guard start != nil, !stopping else { return }
@@ -304,8 +223,6 @@ func secureFieldFocused(_ app: NSRunningApplication) -> Bool {
     timer?.invalidate()
     focusFrame?.cancel()
     let end = hostNow()
-    self.end = end
-    stoppedAt = Date()
     timeline.write(["type": "stop", "t": seconds(t(end)), "at": iso(Date())])
 
     let done = DispatchGroup()
@@ -313,10 +230,6 @@ func secureFieldFocused(_ app: NSRunningApplication) -> Bool {
       done.enter()
       clipEnded = { done.leave() }
       clip.stop()
-    }
-    if let watcher {
-      done.enter()
-      watcher.stop { done.leave() }
     }
     done.enter()
     DispatchQueue.global().async {
@@ -469,7 +382,5 @@ var session: Session?
       excludedApps: Set(stringList("--exclude-apps", in: args))))
   session = current
   stopOn({ current.stop() }, commands: { current.command($0) })
-  // The folder is <dataDir>/recordings/<session>: Kladd's own writes are not the student's work.
-  let dataDir = URL(fileURLWithPath: dir).standardized.deletingLastPathComponent().deletingLastPathComponent()
-  await current.begin(deniedPaths: stringList("--deny-paths", in: args) + [dataDir.path + "/"])
+  await current.begin()
 }

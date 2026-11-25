@@ -12,8 +12,6 @@ export const sessionFiles = {
   session: "session.json",
   /** Live: one TimelineEvent per line. Lines can be slightly out of `t` order; sort before use. */
   timeline: "timeline.jsonl",
-  /** Live: one FileChange per line, each path once. */
-  files: "files.jsonl",
   /** Live: `<t>.jpg` keyframes at full resolution, with `<t>.txt` OCR text beside them. */
   frames: "frames",
   /** Live: `<t>.json`, the FocusSnapshot at each keyframe. */
@@ -119,15 +117,6 @@ export const TimelineEvent = Schema.Union([
 ]);
 export type TimelineEvent = typeof TimelineEvent.Type;
 
-/** One line of `files.jsonl`: a file that changed during the session. */
-export const FileChange = Schema.Struct({
-  /** When it first changed. */
-  t,
-  /** Absolute path. */
-  path: Schema.String,
-});
-export type FileChange = typeof FileChange.Type;
-
 /** One line of a clip's `transcript.jsonl`: what was said from `t` to `end`. */
 export const TranscriptSegment = Schema.Struct({
   t,
@@ -150,8 +139,7 @@ export const SessionInfo = Schema.Struct({
 export type SessionInfo = typeof SessionInfo.Type;
 
 /**
- * Apps whose windows are left out of the video and keyframes, and whose files are never listed
- * or readable: password managers and Messages.
+ * Apps whose windows are left out of the video and keyframes, and whose files are never readable: password managers and Messages.
  */
 export const excludedApps: ReadonlyArray<string> = [
   "com.1password.1password",
@@ -165,8 +153,7 @@ export const excludedApps: ReadonlyArray<string> = [
 ];
 
 /**
- * A path containing one of these is private: never listed in `files.jsonl` and never readable by
- * the summary agent. Caches, Apple background services, credentials and excluded apps.
+ * A path containing one of these is private: never readable by the summary agent. Caches, Apple background services, credentials and excluded apps.
  */
 export const deniedPathFragments: ReadonlyArray<string> = [
   "/Library/Caches/",
@@ -188,15 +175,6 @@ export const deniedPathFragments: ReadonlyArray<string> = [
   "/.aws/",
   "/.netrc",
   ...excludedApps.map((bundleId) => `/${bundleId}`),
-];
-
-/** Changes that say nothing about what the student did; left out of `files.jsonl` only. */
-export const noisyPathFragments: ReadonlyArray<string> = [
-  "/.git/",
-  "/node_modules/",
-  "/.Trash/",
-  "/Library/Logs/",
-  "/.DS_Store",
 ];
 
 export const isDeniedPath = (path: string): boolean =>

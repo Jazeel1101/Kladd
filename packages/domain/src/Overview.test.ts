@@ -58,12 +58,6 @@ const realistic: OverviewInput = {
     frame(1622),
     { type: "stop", t: 2400, at: "2026-11-24T13:42:00Z" },
   ],
-  files: [
-    { t: 120, path: "/Users/elev/Code/robot/src/main.c" },
-    { t: 180, path: "/Users/elev/Code/robot/src/sensor.h" },
-    { t: 760, path: "/Users/elev/Code/robot/src/sensor.c" },
-    { t: 1900, path: "/Users/elev/Documents/Logg uke 47.docx" },
-  ],
   clips: [
     {
       name: "001",
@@ -136,7 +130,7 @@ describe("renderOverview", () => {
     assert.include(text, "| 001 | 430–580 | clips/001/ | yes | 4 lines | 2 |");
     assert.include(text, "| 002 | 1680–1740 | clips/002/ | no | no | 0 |");
     assert.include(text, "Missing data:\n- No sound in clip 002: no microphone permission");
-    assert.include(text, "/Users/elev/Code/robot/src/\n- main.c (t=120)\n- sensor.c (t=760)");
+    assert.notInclude(text, "Files changed");
   });
 
   it("puts a clip on the session clock to a tenth of a second", () => {
@@ -165,7 +159,6 @@ describe("renderOverview", () => {
     const text = renderOverview({
       session: { ...session, stoppedAt: null },
       events: [{ ...start, accessibility: false }, focus(0, "Code", null)],
-      files: [],
       clips: [{ ...clip, segments: null, info: { ...clip.info, stoppedAt: null } }],
     });
     assert.include(text, "Missing data:");
@@ -174,7 +167,6 @@ describe("renderOverview", () => {
     assert.include(text, "No transcript.jsonl yet in clip 001");
     assert.include(text, "No stop time for clip 001 (a crash)");
     assert.include(text, "| 001 | 430–? |");
-    assert.include(text, "None.");
   });
 
   it("says None. without clips, and has no clip reading notes", () => {
@@ -183,16 +175,13 @@ describe("renderOverview", () => {
     assert.notInclude(text, "marks.jsonl");
   });
 
-  it("caps keyframes and files per folder, and says where the rest is", () => {
+  it("caps keyframes per row", () => {
     const frames = Array.from({ length: 10 }, (_, i) => frame(i * 20 + 1));
     const text = renderOverview({
       session,
       events: [start, focus(0, "Code", "x"), ...frames, { type: "stop", t: 300, at: "x" }],
-      files: Array.from({ length: 12 }, (_, i) => ({ t: i, path: `/Users/elev/p/f${i}.ts` })),
       clips: [],
     });
     assert.include(text, "000101 +4 |");
-    assert.include(text, "- +4 more");
-    assert.include(text, "all of them are in `files.jsonl`");
   });
 });

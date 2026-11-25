@@ -7,7 +7,6 @@
 - **No video or sound.** Those are clips'. t = 0 is the `start` event.
 - **Starts without a display.** While the Mac is locked ScreenCaptureKit lists none; the session starts anyway and takes keyframes once the privacy filter can be built (tried every second).
 - **`frame` events are written with the JPEG**, before OCR, so a crash during OCR still leaves the keyframe on the timeline. `ocr` names the `.txt` OCR will write; it is missing when OCR failed or had not finished. At stop, OCR gets 10 s more. Vision's first accurate-mode call on a Mac loads its model, which can take 30–100 s.
-- **Stop keeps watching files for 1.5 s.** fseventsd hands a change over up to about a second late, and `FSEventStreamFlushSync` does not hurry it; changes that arrive then get the `stop` event's `t`.
 
 ## Clip
 
@@ -21,4 +20,4 @@
 
 ## Privacy
 
-The lists come from domain as JSON arguments (`--exclude-apps`, `--deny-paths`). The session adds Kladd's data dir itself, as `<dir>/../..`, because the folder is `<dataDir>/recordings/<session>`. The filter (`Privacy.swift`) is rebuilt when an excluded app starts, since ScreenCaptureKit only excludes apps that are running; from its launch until a filter that leaves it out is in use, no keyframes or clip frames are written, so a clip's video freezes briefly. The titles of excluded apps are left out of `focus` events.
+The excluded apps come from domain as a JSON argument (`--exclude-apps`). The filter (`Privacy.swift`) is rebuilt when an excluded app starts, since ScreenCaptureKit only excludes apps that are running; from its launch until a filter that leaves it out is in use, no keyframes or clip frames are written, so a clip's video freezes briefly. The titles of excluded apps are left out of `focus` events.
