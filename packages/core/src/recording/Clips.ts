@@ -38,8 +38,8 @@ export class Clips extends Context.Service<
   {
     /**
      * Starts a clip in the active session, or stops the one recording, then transcribes it in the
-     * background. Does nothing without an active session. A clip that fails to start is kept,
-     * stopped, without its files.
+     * background. Does nothing without an active session. A clip whose capture fails to start, or
+     * is cancelled by end before it records, is removed.
      */
     readonly toggle: Effect.Effect<void, ScreenCapturePermissionDenied | ScreenCaptureFailed>;
     /** For Recordings: the session writing `folder` is recording, so clips go into it. */
@@ -134,22 +134,20 @@ export class Clips extends Context.Service<
         });
         yield* Ref.set(recording, Option.some(clip));
         const scope = yield* Scope.make();
+        // A clip that never recorded is no clip: its folder goes, and the next one takes its name.
+        const discard = (exit: Exit.Exit<unknown, unknown>) =>
+          Scope.close(scope, exit).pipe(
+            Effect.andThen(store.removeClip(clip)),
+            Effect.andThen(Ref.set(recording, Option.none())),
+          );
         // A start that never reports ready must not keep end, so the session's stop, waiting.
         const handle = yield* capture.start(clip).pipe(
           Scope.provide(scope),
           Effect.asSome,
           Effect.raceFirst(Effect.as(Deferred.await(ending), Option.none<ClipCaptureHandle>())),
-          Effect.onError((cause) =>
-            Effect.flatMap(DateTime.now, (now) =>
-              Effect.andThen(Scope.close(scope, Exit.failCause(cause)), markStopped(clip, now)),
-            ),
-          ),
+          Effect.onError((cause) => discard(Exit.failCause(cause))),
         );
-        if (Option.isNone(handle)) {
-          yield* Scope.close(scope, Exit.void);
-          yield* markStopped(clip, yield* DateTime.now);
-          return;
-        }
+        if (Option.isNone(handle)) return yield* discard(Exit.void);
         // Times in the clip's files count from its first frame, which is about when start succeeds.
         const startedAt = yield* DateTime.now;
         yield* store.updateClip(clip, (info) => ({ ...info, startedAt }));

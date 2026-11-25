@@ -44,6 +44,8 @@ export class RecordingStore extends Context.Service<
     ) => Effect.Effect<void>;
     /** Creates the session folder's next clip folder, `clips/<clipName>`, with `info`. Returns it. */
     readonly createClip: (folder: string, info: ClipInfo) => Effect.Effect<string>;
+    /** Deletes a clip folder that recorded nothing; only the last one, so clip names stay in order. */
+    readonly removeClip: (clip: string) => Effect.Effect<void>;
     /** Changes a clip folder's `clip.json`. */
     readonly updateClip: (
       clip: string,

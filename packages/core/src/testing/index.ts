@@ -72,10 +72,14 @@ export const ScreenCaptureTest = {
 
 /**
  * Writes nothing; starts and stops at once, or after running `start` or `stop`: Effect.sleep for
- * the helper's latency, Effect.never for a start that never reports ready.
+ * the helper's latency, Effect.never for a start that never reports ready, a failure for one that
+ * fails.
  */
 export const ClipCaptureTest = (
-  wait: { readonly start?: Effect.Effect<void>; readonly stop?: Effect.Effect<void> } = {},
+  wait: {
+    readonly start?: Effect.Effect<void, ScreenCaptureFailed>;
+    readonly stop?: Effect.Effect<void>;
+  } = {},
 ) =>
   Layer.succeed(
     ClipCapture,
@@ -207,6 +211,12 @@ export const RecordingStoreTest = Layer.effect(
           const inFolder = [...all.keys()].filter((clip) => clip.startsWith(`${folder}/`));
           const clip = `${folder}/${clipsFolder}/${clipName(inFolder.length + 1)}`;
           return [clip, new Map(all).set(clip, created)];
+        }),
+      removeClip: (clip) =>
+        Ref.update(clips, (all) => {
+          const left = new Map(all);
+          left.delete(clip);
+          return left;
         }),
       updateClip: (clip, update) =>
         Ref.update(clips, (all) => {

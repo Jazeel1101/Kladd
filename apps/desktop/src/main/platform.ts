@@ -41,10 +41,10 @@ export const PlatformLive = Layer.unwrap(
     }
     const helper = captureHelper();
     return Layer.mergeAll(
-      ScreenCaptureDarwin(helper),
+      // The session's helper records the clips and, while it runs, takes the screenshots: two
+      // helpers can't both use ScreenCaptureKit.
+      ScreenCaptureDarwin(helper).pipe(Layer.provideMerge(SessionCaptureDarwin(helper))),
       FocusTrackerDarwin(helper),
-      // Clips are recorded by the session's helper, so one layer provides both.
-      SessionCaptureDarwin(helper),
       // The Whisper model is downloaded once and shared by every recording.
       TranscriberDarwin(helper, join(app.getPath("userData"), "models")),
     );

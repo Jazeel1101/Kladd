@@ -139,6 +139,32 @@ final class FileWatcher {
 
 // MARK: - Session
 
+/// What the running session reads from stdin: one command per line. A path is absolute, the rest
+/// of the line, spaces and all.
+enum SessionCommand: Equatable {
+  /// `clip-start <folder>`: starts a clip in the folder, which exists.
+  case clipStart(URL)
+  /// `clip-stop`: stops the clip that is starting or recording.
+  case clipStop
+  /// `screenshot <file.png>`: saves the main display there.
+  case screenshot(URL)
+
+  init?(_ line: String) {
+    if line == "clip-stop" {
+      self = .clipStop
+      return
+    }
+    for (prefix, make) in [("clip-start ", SessionCommand.clipStart), ("screenshot ", SessionCommand.screenshot)] {
+      guard line.hasPrefix(prefix) else { continue }
+      let path = String(line.dropFirst(prefix.count))
+      guard path.hasPrefix("/") else { return nil }
+      self = make(URL(fileURLWithPath: path))
+      return
+    }
+    return nil
+  }
+}
+
 /// Reads the focused element's subrole: a password field means no keyframe.
 func secureFieldFocused(_ app: NSRunningApplication) -> Bool {
   guard AXIsProcessTrusted(),
@@ -228,15 +254,25 @@ func secureFieldFocused(_ app: NSRunningApplication) -> Bool {
     if stopRequested { stop() }
   }
 
-  // MARK: Clips
+  // MARK: Commands
 
-  /// One line from stdin. Answers `clip-recording` once a clip has its first frame, then
+  /// One line from stdin. A clip answers `clip-recording` once it has its first frame, then
   /// `clip-stopped` or `clip-failed <reason>` once it has ended; a clip that ends before its first
-  /// frame answers only `clip-failed`.
+  /// frame answers only `clip-failed`. A screenshot answers `screenshot-saved <file>` or
+  /// `screenshot-failed <file>` (the reason goes to stderr). This process is the only
+  /// ScreenCaptureKit user while it runs, so the ⌃⇧C screenshot is taken here too.
   func command(_ line: String) {
-    guard let command = ClipCommand(line) else { return logError("unknown command: \(line)") }
+    guard let command = SessionCommand(line) else { return logError("unknown command: \(line)") }
     switch command {
-    case .start(let dir):
+    case .screenshot(let url):
+      Task { @MainActor in
+        guard let image = await screenshot(), writePNG(image, to: url) else {
+          logError("cannot save the screenshot \(url.path)")
+          return say("screenshot-failed \(url.path)")
+        }
+        say("screenshot-saved \(url.path)")
+      }
+    case .clipStart(let dir):
       guard !stopping else { return say("clip-failed the session is stopping") }
       // The caller waits for a clip's end before it starts the next one.
       guard clip == nil else { return logError("a clip is already recording; ignored \(line)") }
@@ -245,7 +281,7 @@ func secureFieldFocused(_ app: NSRunningApplication) -> Bool {
         ended: { [weak self] failure in self?.ended(clip: failure) })
       clip = started
       started.begin()
-    case .stop:
+    case .clipStop:
       guard let clip else { return logError("no clip to stop") }
       clip.stop()
     }
@@ -346,8 +382,12 @@ func secureFieldFocused(_ app: NSRunningApplication) -> Bool {
 
   // MARK: Keyframes
 
+  /// The main display through the privacy filter, at full resolution unless a size is given.
   func screenshot(width: Int? = nil, height: Int? = nil) async -> CGImage? {
-    guard let filter = privacy.filter, let display = privacy.display else { return nil }
+    guard let filter = privacy.filter, let display = privacy.display else {
+      logError("screenshot failed: no display to capture")
+      return nil
+    }
     let config = pixelConfiguration(for: display)
     if let width, let height {
       config.width = width

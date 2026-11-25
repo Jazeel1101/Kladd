@@ -12,6 +12,12 @@ export interface CaptureHelper {
   readonly excludePid: number;
 }
 
+/**
+ * How long a screenshot may take. It takes well under a second, but ScreenCaptureKit can leave a
+ * call hanging for ever, such as while another process of Kladd's captures the screen.
+ */
+export const screenshotTimeout = "10 seconds";
+
 /** kladd-capture's exit code for "permission denied" (EX_NOPERM). */
 const exitDenied = 77;
 
@@ -28,7 +34,7 @@ export interface HelperResult {
   readonly exitCode: number;
 }
 
-/** Runs the helper to completion. Fails only when it can't be started or read. */
+/** Runs the helper to completion. Fails only when it can't be started or read. Interrupting it kills the helper. */
 export const runHelper = (
   spawner: ChildProcessSpawner.ChildProcessSpawner["Service"],
   helper: CaptureHelper,

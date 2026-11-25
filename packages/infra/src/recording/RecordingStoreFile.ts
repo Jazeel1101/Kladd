@@ -175,6 +175,10 @@ export const RecordingStoreFile = Layer.effect(
       return clip;
     }, Effect.orDie);
 
+    const removeClip = Effect.fn("RecordingStoreFile.removeClip")(function* (clip: string) {
+      yield* fs.remove(clip, { recursive: true });
+    }, Effect.orDie);
+
     const updateClip = Effect.fn("RecordingStoreFile.updateClip")(function* (
       clip: string,
       update: (info: ClipInfo) => ClipInfo,
@@ -231,6 +235,7 @@ export const RecordingStoreFile = Layer.effect(
       folder,
       updateInfo,
       createClip,
+      removeClip,
       updateClip,
       untranscribed,
       read,

@@ -9,10 +9,11 @@
 //       prints "recording" once frames are written; stops on SIGINT, SIGTERM or stdin closing.
 //   kladd-capture session --dir <folder> [--exclude-pid pid] [--exclude-apps json] [--deny-paths json]
 //       writes a session folder's live files (Session.swift); prints and stops like record. It also
-//       records clips (Clip.swift), the only other ScreenCaptureKit user then, on stdin lines:
+//       records clips (Clip.swift) and takes screenshots, as the only ScreenCaptureKit user then, on stdin lines:
 //         clip-start <clip folder>   answers "clip-recording" at the first frame, then one of the two below
 //         clip-stop                  answers "clip-stopped" once the files are done, or
 //                                    "clip-failed <reason>" (also instead of "clip-recording")
+//         screenshot <file.png>      answers "screenshot-saved <file.png>" or "screenshot-failed <file.png>"
 //   kladd-capture accessibility-status                    Accessibility: prints "granted" or "denied"
 //   kladd-capture accessibility-request --app <Kladd.app> [--timeout s]
 //   kladd-capture focus [--exclude-pid pid]               prints a FocusSnapshot as JSON (Focus.swift)
@@ -164,6 +165,13 @@ enum PermissionPane { case screenRecording, accessibility }
 
 // MARK: - Screenshot
 
+func writePNG(_ image: CGImage, to url: URL) -> Bool {
+  guard let destination = CGImageDestinationCreateWithURL(url as CFURL, UTType.png.identifier as CFString, 1, nil)
+  else { return false }
+  CGImageDestinationAddImage(destination, image, nil)
+  return CGImageDestinationFinalize(destination)
+}
+
 func runScreenshot(_ args: [String]) async {
   guard let out = option("--out", in: args) else { fail("screenshot needs --out <file.png>", code: exitUsage) }
   requireGranted()
@@ -172,11 +180,7 @@ func runScreenshot(_ args: [String]) async {
     let config = pixelConfiguration(for: display)
     config.showsCursor = false
     let image = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config)
-    let url = URL(fileURLWithPath: out)
-    guard let destination = CGImageDestinationCreateWithURL(url as CFURL, UTType.png.identifier as CFString, 1, nil)
-    else { throw Failure(message: "cannot write \(out)") }
-    CGImageDestinationAddImage(destination, image, nil)
-    guard CGImageDestinationFinalize(destination) else { throw Failure(message: "cannot write \(out)") }
+    guard writePNG(image, to: URL(fileURLWithPath: out)) else { throw Failure(message: "cannot write \(out)") }
     exit(0)
   } catch {
     fail(String(describing: error))

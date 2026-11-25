@@ -10,19 +10,23 @@ import {
   type HelperResult,
   parsePermission,
   runHelper,
+  screenshotTimeout,
   startCapture,
 } from "./helper";
+import { SessionHelper } from "./SessionCaptureDarwin";
 
 /**
  * macOS ScreenCapture. Each call runs the Swift helper in ../native (ScreenCaptureKit, plus
  * PermissionFlow to guide the user through System Settings). A child process of Kladd counts as
  * Kladd for screen recording permission. Build the helper with `vp run @kladd/platform-darwin#build:native`.
+ * While a session runs, its helper takes the screenshots (SessionHelper).
  */
 export const ScreenCaptureDarwin = (helper: CaptureHelper) =>
   Layer.effect(
     ScreenCapture,
     Effect.gen(function* () {
       const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+      const session = yield* SessionHelper;
 
       /** Runs the helper to completion. A failure to start it is ScreenCaptureFailed. */
       const run = (args: ReadonlyArray<string>) =>
@@ -53,7 +57,14 @@ export const ScreenCaptureDarwin = (helper: CaptureHelper) =>
       const pid = String(helper.excludePid);
 
       const screenshot = Effect.fn("ScreenCaptureDarwin.screenshot")(function* (file: string) {
-        yield* captureResult(yield* run(["screenshot", "--out", file, "--exclude-pid", pid]));
+        if (yield* session.screenshot(file)) return;
+        const result = yield* run(["screenshot", "--out", file, "--exclude-pid", pid]).pipe(
+          Effect.timeoutOrElse({
+            duration: screenshotTimeout,
+            orElse: () => Effect.fail(new ScreenCaptureFailed({ reason: "screenshot timed out" })),
+          }),
+        );
+        yield* captureResult(result);
       });
 
       const recordVideo = Effect.fn("ScreenCaptureDarwin.recordVideo")(function* (file: string) {

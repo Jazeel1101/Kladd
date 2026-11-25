@@ -114,13 +114,16 @@ let step = CMTime(value: 1, timescale: videoFps)
   #expect(paths.contains(first.path) && paths.contains(second.path))
 }
 
-@Test func clipCommandsAreOneLineEach() {
-  #expect(ClipCommand("clip-start /tmp/a folder/clips/1") == .start(URL(fileURLWithPath: "/tmp/a folder/clips/1")))
-  #expect(ClipCommand("clip-stop") == .stop)
-  #expect(ClipCommand("clip-start relative/dir") == nil)
-  #expect(ClipCommand("clip-start ") == nil)
-  #expect(ClipCommand("clip-stop now") == nil)
-  #expect(ClipCommand("") == nil)
+@Test func sessionCommandsAreOneLineEach() {
+  #expect(
+    SessionCommand("clip-start /tmp/a folder/clips/1") == .clipStart(URL(fileURLWithPath: "/tmp/a folder/clips/1")))
+  #expect(SessionCommand("clip-stop") == .clipStop)
+  #expect(SessionCommand("screenshot /tmp/a b/shot.png") == .screenshot(URL(fileURLWithPath: "/tmp/a b/shot.png")))
+  #expect(SessionCommand("clip-start relative/dir") == nil)
+  #expect(SessionCommand("screenshot shot.png") == nil)
+  #expect(SessionCommand("clip-start ") == nil)
+  #expect(SessionCommand("clip-stop now") == nil)
+  #expect(SessionCommand("") == nil)
 }
 
 /// 10 ms of mono float PCM at 48 kHz, stamped `time`.

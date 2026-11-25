@@ -1,4 +1,5 @@
 import { assert, describe, it } from "@effect/vitest";
+import { ScreenCaptureFailed } from "@kladd/domain";
 import { DateTime, Effect, Fiber, Layer, Option, Ref } from "effect";
 import { TestClock } from "effect/testing";
 import { LoggingOverlay } from "../logging/LoggingOverlay";
@@ -83,18 +84,38 @@ describe("Clips", () => {
     }).pipe(Effect.provide(kladd)),
   );
 
-  it.effect("stopping the session interrupts a clip that never reports ready, and stops", () =>
+  it.effect("stopping the session cancels a clip that never reports ready, and stops", () =>
     Effect.gen(function* () {
       const recordings = yield* Recordings;
+      const clips = yield* Clips;
       yield* recordings.start;
-      const starting = yield* Effect.forkChild((yield* Clips).toggle);
+      const starting = yield* Effect.forkChild(clips.toggle);
       while ((yield* clipsOfFirstSession).length === 0) yield* Effect.yieldNow;
+      // A second press waits behind the start; once the session ends it leaves no clip either.
+      const queued = yield* Effect.forkChild(clips.toggle);
       yield* recordings.stop;
       yield* Fiber.join(starting);
-      assert.deepStrictEqual(yield* clipsOfFirstSession, [["001", true]]);
+      yield* Fiber.join(queued);
+      assert.deepStrictEqual(yield* clipsOfFirstSession, []);
       assert.strictEqual((yield* Ref.get(yield* SessionCaptureLog)).stopped, 1);
       assert.isTrue(Option.isNone(yield* (yield* RecordingStore).active));
     }).pipe(Effect.provide(kladdWith(ClipCaptureTest({ start: Effect.never })))),
+  );
+
+  it.effect("a clip whose capture fails to start leaves no folder behind", () =>
+    Effect.gen(function* () {
+      const clips = yield* Clips;
+      yield* (yield* Recordings).start;
+      const failed = yield* Effect.flip(clips.toggle);
+      assert.strictEqual(failed._tag, "ScreenCaptureFailed");
+      assert.deepStrictEqual(yield* clipsOfFirstSession, []);
+    }).pipe(
+      Effect.provide(
+        kladdWith(
+          ClipCaptureTest({ start: Effect.fail(new ScreenCaptureFailed({ reason: "no frame" })) }),
+        ),
+      ),
+    ),
   );
 
   it.effect("a clip starts when its capture is ready, and stops when stop is asked for", () =>

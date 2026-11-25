@@ -33,6 +33,9 @@ let videoRetryDelay: Double = 5
 /// A started stream sends a frame at once, even of a still screen. One that sent none by now is
 /// dropped and started again: ScreenCaptureKit can leave a start hanging without an error.
 let videoStartTimeout: Double = 3
+/// A clip with no video frame this long after its start has failed: ScreenCaptureKit kept refusing
+/// or hanging its streams (another process capturing the screen does that), and the caller waits.
+let clipFirstFrameWait: Double = 10
 /// A clip whose files have not finished this long after its stop has failed.
 let clipFinishWait: Double = 30
 
@@ -390,26 +393,6 @@ final class ClipAudio: NSObject, AVCaptureAudioDataOutputSampleBufferDelegate {
 
 // MARK: - Clip
 
-/// What the running session reads from stdin (Session.swift): one command per line.
-enum ClipCommand: Equatable {
-  /// `clip-start <folder>`: the folder exists and is absolute; the rest of the line, spaces and all.
-  case start(URL)
-  /// `clip-stop`: stops the clip that is starting or recording.
-  case stop
-
-  init?(_ line: String) {
-    if line == "clip-stop" {
-      self = .stop
-      return
-    }
-    let prefix = "clip-start "
-    guard line.hasPrefix(prefix) else { return nil }
-    let path = String(line.dropFirst(prefix.count))
-    guard path.hasPrefix("/") else { return nil }
-    self = .start(URL(fileURLWithPath: path))
-  }
-}
-
 /// Runs on the main queue, apart from the video and audio callbacks. Records through the session's
 /// privacy filter, and calls `ended` once, with nil when its files are done.
 @MainActor final class Clip {
@@ -455,7 +438,8 @@ enum ClipCommand: Equatable {
     return (time - start).seconds
   }
 
-  /// Starts on the session's filter and display; without them (the Mac is locked) it fails.
+  /// Starts on the session's filter and display; without them (the Mac is locked), or with no frame
+  /// by `clipFirstFrameWait`, it fails.
   func begin() {
     guard let filter = privacy.filter, let display = privacy.display else {
       return end("no display to capture")
@@ -466,6 +450,10 @@ enum ClipCommand: Equatable {
     video.onFailed = { [weak self] reason in self?.stop(failure: reason) }
     audio?.run()
     watchVideo(videoAttempt)
+    DispatchQueue.main.asyncAfter(deadline: .now() + clipFirstFrameWait) { [weak self] in
+      guard let self, self.start == nil, !self.stopping else { return }
+      self.stop(failure: "no video frame in \(Int(clipFirstFrameWait)) s")
+    }
     Task {
       do {
         try await startVideo(filter: filter, display: display)
