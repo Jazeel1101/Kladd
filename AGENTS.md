@@ -27,13 +27,13 @@ We can't compromise on these.
 
 The Electron main process is the backend; every window is a thin view over it, picked by URL hash (`#pill`) from one window table in `apps/desktop/src/main/windows.ts`:
 
-| Window             | Where                                                                 | Shows                                                                      |
-| ------------------ | --------------------------------------------------------------------- | -------------------------------------------------------------------------- |
-| `RecordingPill`    | Left screen edge, ~4/5 down; dragged to any edge, or floating         | Always. Chevron: expanded view. Menu: start/stop recording, Settings, Quit |
-| `LoggingOverlay`   | Next to where the user writes (`docs/internals/overlay-placement.md`) | When a recording stops                                                     |
-| `ExpandedView`     | Overlay                                                               | Opened from the pill: summary and images                                   |
-| `ScreenshotFlight` | Over the whole main display (`docs/internals/screenshot-flight.md`)   | While a ⌃⇧C screenshot flies into the pill                                 |
-| Settings           | The only normal window                                                | Opened from the pill menu                                                  |
+| Window             | Where                                                                 | Shows                                                                                                             |
+| ------------------ | --------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `RecordingPill`    | Left screen edge, ~4/5 down; dragged to any edge, or floating         | Always. Buttons per session state (start; screenshot, clip, end; log, done). Menu: the same, mode, Settings, Quit |
+| `LoggingOverlay`   | Next to where the user writes (`docs/internals/overlay-placement.md`) | When a session ends                                                                                               |
+| `ExpandedView`     | Overlay                                                               | Opened from the pill: past sessions                                                                               |
+| `ScreenshotFlight` | Over the whole main display (`docs/internals/screenshot-flight.md`)   | While a ⌃⇧C screenshot flies into the pill                                                                        |
+| Settings           | The only normal window                                                | Opened from the pill menu                                                                                         |
 
 The UI reaches main only through `KladdRpcs` over MessagePorts (`docs/internals/rpc-over-messageports.md`); the pill menu is the other entry point. OS work runs in the Swift helper `kladd-capture`, one process per call, so macOS attributes its permissions to Kladd. Dependencies point inward, `apps → infra/platform → core → domain`, and each package's `AGENTS.md` says what belongs there and which file to copy:
 
@@ -49,7 +49,7 @@ The UI reaches main only through `KladdRpcs` over MessagePorts (`docs/internals/
 | `apps/desktop`             | Electron main + preload; the only place layers are wired   |
 | `apps/ui`                  | React renderer, one route per window                       |
 
-A feature that crosses packages copies the "recording" slice: `packages/domain/src/RecordingSession.ts` → `packages/core/src/recording/Recordings.ts` → `packages/platform-darwin/src/ScreenCaptureDarwin.ts` + `packages/infra/src/recording/RecordingStoreFile.ts` → `apps/desktop/src/main/MainLive.ts`, watched through `WatchRecording` → `apps/ui/src/recording/atoms.ts` → `apps/ui/src/pill/`. A new app is one adapter file: `docs/operations/adding-app-support.md`.
+A feature that crosses packages copies the "session" slice: `packages/domain/src/Session.ts` → `packages/core/src/session/Sessions.ts` → `packages/platform-darwin/src/SessionCaptureDarwin.ts` + `packages/infra/src/session/SessionStoreFile.ts` → `apps/desktop/src/main/MainLive.ts`, watched through `WatchSession` → `apps/ui/src/session/atoms.ts` → `apps/ui/src/pill/`. A new app is one adapter file: `docs/operations/adding-app-support.md`.
 
 Effect is v4 (`effect@4.1.5`), whose APIs differ from v3: read `node_modules/effect/ai-docs/` rather than recalling v3. Write functions with `Effect.fn("Name.method")`, services with `class X extends Context.Service<X, {...}>()("kladd/<package>/X")`, errors with `Schema.TaggedError` in domain. Toolchain choices that look like mistakes are explained in `docs/internals/toolchain.md`.
 

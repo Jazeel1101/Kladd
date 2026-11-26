@@ -1,20 +1,25 @@
 import { Schema } from "effect";
-import { RecordingSessionId } from "./RecordingSession";
+import { FocusSnapshot } from "./Focus";
+import { Screenshot } from "./Screenshot";
+import { Session, fieldsOf } from "./Session";
 
 /**
  * The folder one work session is written to (GLOSSARY: "opptaksmappe"), and the contract between
  * capture and the summary agent, which is only told to start with `overview.md`.
  * Every `t` is seconds since the session started; frame and focus files are named after it.
- * Clips taken in the session are in `clips/` (clipsFolder), each with its own clock.
+ * Screenshots the student took are in `screenshots/`, clips in `clips/` (clipsFolder), each clip
+ * with its own clock. The timeline, frames and focus are written in auto mode only.
  */
 export const sessionFiles = {
   /** SessionInfo. */
   session: "session.json",
-  /** Live: one TimelineEvent per line. Lines can be slightly out of `t` order; sort before use. */
+  /** `<id>.png`, each with its ScreenshotInfo as `<id>.json`. */
+  screenshots: "screenshots",
+  /** Live, auto mode: one TimelineEvent per line. Lines can be slightly out of `t` order; sort before use. */
   timeline: "timeline.jsonl",
-  /** Live: `<t>.jpg` keyframes at full resolution, with `<t>.txt` OCR text beside them. */
+  /** Live, auto mode: `<t>.jpg` keyframes at full resolution, with `<t>.txt` OCR text beside them. */
   frames: "frames",
-  /** Live: `<t>.json`, the FocusSnapshot at each keyframe. */
+  /** Live, auto mode: `<t>.json`, the FocusSnapshot at each keyframe. */
   focus: "focus",
   /** After stop: the agent's map, from renderOverview. */
   overview: "overview.md",
@@ -125,18 +130,30 @@ export const TranscriptSegment = Schema.Struct({
 });
 export type TranscriptSegment = typeof TranscriptSegment.Type;
 
-/** `session.json`. */
+/** `session.json`: the Session, rewritten as it ends and is logged. */
 export const SessionInfo = Schema.Struct({
-  id: RecordingSessionId,
-  startedAt: Schema.DateTimeUtc,
-  /** Null while recording, and after a crash. */
-  stoppedAt: Schema.NullOr(Schema.DateTimeUtc),
+  ...Session.fields,
   /** Kladd's version. */
   appVersion: Schema.String,
   /** Version of this folder layout. */
-  layout: Schema.Literal(1),
+  layout: Schema.Literal(2),
 });
 export type SessionInfo = typeof SessionInfo.Type;
+
+/** The `session.json` of `session`, started with Kladd `appVersion`. */
+export const sessionInfo = (session: Session, appVersion: string): SessionInfo => ({
+  ...fieldsOf(session),
+  appVersion,
+  layout: 2,
+});
+
+/** `screenshots/<id>.json`: a screenshot, and where the student was when they took it. */
+export const ScreenshotInfo = Schema.Struct({
+  ...Screenshot.fields,
+  /** Null when focus could not be read. */
+  focus: Schema.NullOr(FocusSnapshot),
+});
+export type ScreenshotInfo = typeof ScreenshotInfo.Type;
 
 /**
  * Apps whose windows are left out of the video and keyframes, and whose files are never readable: password managers and Messages.
@@ -179,6 +196,15 @@ export const deniedPathFragments: ReadonlyArray<string> = [
 
 export const isDeniedPath = (path: string): boolean =>
   deniedPathFragments.some((fragment) => path.includes(fragment));
+
+/**
+ * Focus as a session folder may keep it: an excluded app's window title and selected rows (a
+ * conversation, a vault) are as private as its windows, which captures leave out.
+ */
+export const shareableFocus = (focus: FocusSnapshot): FocusSnapshot =>
+  focus.app !== null && excludedApps.includes(focus.app.bundleId)
+    ? { ...focus, title: null, selection: [] }
+    : focus;
 
 /** Speech could not be turned into text: no model yet, a missing helper, an unreadable file. */
 export class TranscriptionFailed extends Schema.TaggedError<

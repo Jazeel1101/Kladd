@@ -1,5 +1,5 @@
 import { ClipCapture, SessionCapture } from "@kladd/core";
-import { excludedApps, ScreenCaptureFailed } from "@kladd/domain";
+import { type CaptureMode, excludedApps, ScreenCaptureFailed } from "@kladd/domain";
 import { type Cause, Context, Deferred, Effect, Layer, Option, Queue, Ref, Stream } from "effect";
 import { ChildProcessSpawner } from "effect/process";
 import { type CaptureHelper, clipAnswerTimeout, screenshotTimeout, startCapture } from "./helper";
@@ -59,8 +59,8 @@ export class SessionHelper extends Context.Service<
 >()("kladd/platform-darwin/SessionHelper") {}
 
 /**
- * macOS SessionCapture and ClipCapture: one long-running `kladd-capture session` per recording
- * (../native/Sources/KladdCapture/Session.swift), which also records its clips (Clip.swift) and
+ * macOS SessionCapture and ClipCapture: one long-running `kladd-capture session` per active work
+ * session (../native/Sources/KladdCapture/Session.swift), which records its clips (Clip.swift) and
  * takes screenshots (SessionHelper) on commands sent to its stdin: two helpers can't both use
  * ScreenCaptureKit. The excluded apps live in domain, so they are passed to the helper as JSON.
  * See docs/internals/session-capture.md.
@@ -71,7 +71,10 @@ export const SessionCaptureDarwin = (helper: CaptureHelper) =>
       const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
       const current = yield* Ref.make(Option.none<Running>());
 
-      const start = Effect.fn("SessionCaptureDarwin.start")(function* (dir: string) {
+      const start = Effect.fn("SessionCaptureDarwin.start")(function* (
+        dir: string,
+        mode: CaptureMode,
+      ) {
         const stdin = yield* Queue.unbounded<string, Cause.Done>();
         const capture = yield* startCapture(
           spawner,
@@ -80,6 +83,8 @@ export const SessionCaptureDarwin = (helper: CaptureHelper) =>
             "session",
             "--dir",
             dir,
+            "--mode",
+            mode,
             "--exclude-pid",
             String(helper.excludePid),
             "--exclude-apps",

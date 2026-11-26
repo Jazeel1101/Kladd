@@ -43,7 +43,7 @@ const noThrow = defineRule({
         context.report({
           node,
           message:
-            "Don't throw. Fail with a tagged error instead: `return yield* new MyError({ ... })`, with MyError defined via Schema.TaggedError in packages/domain (example: packages/domain/src/RecordingSession.ts).",
+            "Don't throw. Fail with a tagged error instead: `return yield* new MyError({ ... })`, with MyError defined via Schema.TaggedError in packages/domain (example: packages/domain/src/Session.ts).",
         });
       },
     };
@@ -190,7 +190,7 @@ const schemaErrors = defineRule({
         context.report({
           node,
           message:
-            "Define errors with Schema.TaggedError in packages/domain so they can cross RPC (example: RecordingAlreadyActive in packages/domain/src/RecordingSession.ts).",
+            "Define errors with Schema.TaggedError in packages/domain so they can cross RPC (example: SessionAlreadyOpen in packages/domain/src/Session.ts).",
         });
       },
     };
@@ -222,7 +222,7 @@ const atomsInAtomsFiles = defineRule({
         context.report({
           node,
           message:
-            "Build KladdClient atoms only in the feature's atoms.ts (apps/ui/src/<feature>/atoms.ts, example: apps/ui/src/recording/atoms.ts), then import the atom into the component.",
+            "Build KladdClient atoms only in the feature's atoms.ts (apps/ui/src/<feature>/atoms.ts, example: apps/ui/src/session/atoms.ts), then import the atom into the component.",
         });
       },
     };

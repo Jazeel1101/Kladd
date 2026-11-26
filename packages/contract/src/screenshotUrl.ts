@@ -1,4 +1,4 @@
-import type { ScreenshotId } from "@kladd/domain";
+import type { Screenshot } from "@kladd/domain";
 
 /**
  * The URL scheme main serves screenshot files on (apps/desktop/src/main/screenshotProtocol.ts), since
@@ -6,4 +6,6 @@ import type { ScreenshotId } from "@kladd/domain";
  */
 export const screenshotScheme = "kladd-screenshot";
 
-export const screenshotUrl = (id: ScreenshotId): string => `${screenshotScheme}://${id}`;
+/** `kladd-screenshot://<session id>/<screenshot id>`: the session names the folder it is in. */
+export const screenshotUrl = ({ session, id }: Pick<Screenshot, "session" | "id">): string =>
+  `${screenshotScheme}://${session}/${id}`;

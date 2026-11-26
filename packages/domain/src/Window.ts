@@ -5,8 +5,8 @@ import { Schema } from "effect";
  * no main window.
  * - pill: RecordingPill, docked on a screen edge or floating. Always shown.
  * - zones: SnapZones, the screen edges where the pill docks; shown while the pill is dragged.
- * - logging: LoggingOverlay, next to where the user writes; opens when a recording stops.
- * - expanded: ExpandedView, summary and images, opened from the pill.
+ * - logging: LoggingOverlay, next to where the user writes; opens when a session ends.
+ * - expanded: ExpandedView, the past sessions, opened from the pill.
  * - settings: the only normal window, opened from the pill menu.
  * - flight: ScreenshotFlight, a click-through overlay over the whole display that flies a new
  *   screenshot into the pill.

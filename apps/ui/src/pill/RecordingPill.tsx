@@ -1,11 +1,20 @@
 import { useAtomSet, useAtomValue } from "@effect/atom-react";
 import { Button } from "@ui-sdk/react/button";
-import { elapsed } from "@kladd/domain";
+import { elapsed, sessionState } from "@kladd/domain";
 import { DateTime, Duration } from "effect";
 import { AsyncResult } from "effect/reactivity";
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { cn } from "../lib/cn";
-import { recordingAtom } from "../recording/atoms";
+import {
+  clipAtom,
+  endSessionAtom,
+  finishLoggingAtom,
+  openLoggingOverlayAtom,
+  sessionAtom,
+  startSessionAtom,
+  takeScreenshotAtom,
+  toggleClipAtom,
+} from "../session/atoms";
 import { showWindowAtom } from "../windows/atoms";
 import { openMenuAtom } from "./atoms";
 import type { Orientation, Wall } from "./notchPlacement";
@@ -146,7 +155,28 @@ const ScreenshotIcon = () => (
   </svg>
 );
 
-/** Static: a ring when idle, a lit red dot while recording. */
+/** A rounded square: end the session. */
+const StopIcon = () => (
+  <svg {...icon}>
+    <rect x="4" y="4" width="8" height="8" rx="1.5" fill="currentColor" stroke="none" />
+  </svg>
+);
+
+/** A pencil: write the log, in the logging overlay. */
+const WriteIcon = () => (
+  <svg {...icon}>
+    <path d="M10.5 3.25 12.75 5.5 6 12.25H3.75V10z" />
+  </svg>
+);
+
+/** A checkmark: the log is written. */
+const DoneIcon = () => (
+  <svg {...icon}>
+    <path d="m3.5 8.5 3 3 6-7" />
+  </svg>
+);
+
+/** Static: a ring to start, a lit red dot while recording. */
 const RecordIndicator = ({ recording }: { readonly recording: boolean }) => (
   <span
     className={cn(
@@ -166,18 +196,90 @@ const RecordIndicator = ({ recording }: { readonly recording: boolean }) => (
 );
 
 /**
+ * The pill's buttons for each state of the open session (domain sessionState): none, so start one or
+ * look at past sessions; active, so take screenshots and clips or end it; ended, so write the log
+ * (logging mode, GLOSSARY: "loggemodus") and tick it off.
+ */
+const SessionButtons = () => {
+  const opened = useAtomValue(sessionAtom);
+  const clipping = useAtomValue(clipAtom);
+  const session = AsyncResult.isSuccess(opened) ? opened.value : null;
+  const clip = AsyncResult.isSuccess(clipping) ? clipping.value : null;
+  const state = session === null ? null : sessionState(session);
+  const now = useNow(state === "active");
+  const start = useAtomSet(startSessionAtom);
+  const end = useAtomSet(endSessionAtom);
+  const finishLogging = useAtomSet(finishLoggingAtom);
+  const screenshot = useAtomSet(takeScreenshotAtom);
+  const toggleClip = useAtomSet(toggleClipAtom);
+  const openLogging = useAtomSet(openLoggingOverlayAtom);
+  const run = (action: (options: { payload: undefined }) => void) => () =>
+    action({ payload: undefined });
+
+  if (session === null || state === "logged") {
+    return (
+      <NotchButton label="Start session" className="size-9" onClick={run(start)}>
+        <RecordIndicator recording={false} />
+      </NotchButton>
+    );
+  }
+  if (state === "ended") {
+    return (
+      <>
+        <NotchButton label="Write the log" onClick={run(openLogging)}>
+          <WriteIcon />
+        </NotchButton>
+        <NotchButton
+          label="Done logging"
+          className="size-9 text-emerald-400 hover:text-emerald-300"
+          onClick={run(finishLogging)}
+        >
+          <DoneIcon />
+        </NotchButton>
+      </>
+    );
+  }
+  return (
+    <>
+      <NotchButton label="Take screenshot (⌃⇧C)" onClick={run(screenshot)}>
+        <ScreenshotIcon />
+      </NotchButton>
+      <NotchButton
+        label={
+          clip === null
+            ? "Start clip (⌥⇧C)"
+            : `Stop clip (${formatElapsed(DateTime.distance(clip, now))})`
+        }
+        className={cn("size-9", clip !== null && "text-red-500 hover:text-red-400")}
+        onClick={run(toggleClip)}
+      >
+        <RecordIndicator recording={clip !== null} />
+      </NotchButton>
+      <NotchButton
+        label={`End session (${formatElapsed(elapsed(session, now))})`}
+        onClick={run(end)}
+      >
+        <StopIcon />
+      </NotchButton>
+    </>
+  );
+};
+
+/**
  * RecordingPill: Kladd's only presence, a notch of liquid docked on a screen edge (a column on the
- * sides, a row on the bottom) or floating. Holds the expanded view, the recording indicator
- * and screenshot, and opens to take in a ⌃⇧C screenshot (src/pill/intake.ts). Drag it to move it:
+ * sides, a row on the bottom) or floating. Holds the expanded view and the session's buttons
+ * (SessionButtons), and opens to take in a screenshot (src/pill/intake.ts). Drag it to move it:
  * it is a plain pill in the open, an edge pulls it in when it comes close, and a ghost shows where
  * it will dock. Right-click opens the menu.
  */
 export const RecordingPill = () => {
-  const recording = useAtomValue(recordingAtom);
+  const opened = useAtomValue(sessionAtom);
   const showWindow = useAtomSet(showWindowAtom);
   const openMenu = useAtomSet(openMenuAtom);
-  const session = AsyncResult.isSuccess(recording) ? recording.value : null;
-  const now = useNow(session !== null);
+  const active =
+    AsyncResult.isSuccess(opened) &&
+    opened.value !== null &&
+    sessionState(opened.value) === "active";
   const { frame, moving, liquid, turns, handlers } = useNotchDrag();
   const { box, drawWall, orientation } = frame;
 
@@ -311,25 +413,15 @@ export const RecordingPill = () => {
             rotate: `${frame.tilt}deg`,
           }}
         >
-          <NotchButton
-            label="Open summary"
-            onClick={() => showWindow({ payload: { kind: "expanded" } })}
-          >
-            <ExpandIcon angle={awayFrom[drawWall]} />
-          </NotchButton>
-          <NotchButton
-            label={
-              session === null
-                ? "Start recording"
-                : `Stop recording (${formatElapsed(elapsed(session, now))})`
-            }
-            className={cn("size-9", session !== null && "text-red-500 hover:text-red-400")}
-          >
-            <RecordIndicator recording={session !== null} />
-          </NotchButton>
-          <NotchButton label="Take screenshot">
-            <ScreenshotIcon />
-          </NotchButton>
+          {!active && (
+            <NotchButton
+              label="Past sessions"
+              onClick={() => showWindow({ payload: { kind: "expanded" } })}
+            >
+              <ExpandIcon angle={awayFrom[drawWall]} />
+            </NotchButton>
+          )}
+          <SessionButtons />
         </div>
       </div>
     </div>

@@ -10,14 +10,17 @@ import {
   Ref,
   Scope,
   Semaphore,
+  Stream,
+  SubscriptionRef,
 } from "effect";
 import { ClipCapture, type ClipCaptureHandle } from "../ports/ClipCapture";
-import { RecordingStore } from "../ports/RecordingStore";
+import { SessionStore } from "../ports/SessionStore";
 import { Transcriber } from "../ports/Transcriber";
 
 /** The clip being recorded. */
 interface Running {
   readonly folder: string;
+  readonly startedAt: DateTime.Utc;
   readonly handle: ClipCaptureHandle;
   readonly scope: Scope.Closeable;
 }
@@ -30,7 +33,7 @@ interface Session {
 
 /**
  * Use case: start and stop clips (GLOSSARY: "klipp") inside the active work session, each in its
- * own folder in the session folder, and transcribe them after they stop. Recordings tells it when
+ * own folder in the session folder, and transcribe them after they stop. Sessions tells it when
  * a session begins and ends; without one, toggle does nothing.
  */
 export class Clips extends Context.Service<
@@ -42,10 +45,12 @@ export class Clips extends Context.Service<
      * is cancelled by end before it records, is removed.
      */
     readonly toggle: Effect.Effect<void, ScreenCapturePermissionDenied | ScreenCaptureFailed>;
-    /** For Recordings: the session writing `folder` is recording, so clips go into it. */
+    /** When the clip recording now started (none without one), then on every start and stop. */
+    readonly changes: Stream.Stream<Option.Option<DateTime.Utc>>;
+    /** For Sessions: the session writing `folder` is capturing, so clips go into it. */
     readonly begin: (folder: string) => Effect.Effect<void>;
     /**
-     * For Recordings, before the session capture stops: interrupts a clip still starting, stops a
+     * For Sessions, before the session capture stops: interrupts a clip still starting, stops a
      * recording one, without transcribing it (finishSession does), and takes no more clips until
      * the next begin.
      */
@@ -63,10 +68,10 @@ export class Clips extends Context.Service<
     Clips,
     Effect.gen(function* () {
       const capture = yield* ClipCapture;
-      const store = yield* RecordingStore;
+      const store = yield* SessionStore;
       const transcriber = yield* Transcriber;
       const session = yield* Ref.make(Option.none<Session>());
-      const running = yield* Ref.make(Option.none<Running>());
+      const running = yield* SubscriptionRef.make(Option.none<Running>());
       // The clip folder from createClip until it has stopped, which transcription leaves alone.
       const recording = yield* Ref.make(Option.none<string>());
       // Toggles, begin and end check, then change, the running clip; one at a time.
@@ -100,7 +105,7 @@ export class Clips extends Context.Service<
 
       // Always stops: a capture that fails to finish is logged, and the clip kept as it is.
       const stopRunning = Effect.gen(function* () {
-        const clip = yield* Ref.getAndSet(running, Option.none());
+        const clip = yield* SubscriptionRef.getAndSet(running, Option.none());
         if (Option.isNone(clip)) return Option.none<string>();
         const { folder, handle, scope } = clip.value;
         // The clip's files end at the stop request; the helper takes a moment to finish them.
@@ -151,11 +156,17 @@ export class Clips extends Context.Service<
         // Times in the clip's files count from its first frame, which is about when start succeeds.
         const startedAt = yield* DateTime.now;
         yield* store.updateClip(clip, (info) => ({ ...info, startedAt }));
-        yield* Ref.set(running, Option.some({ folder: clip, handle: handle.value, scope }));
+        yield* SubscriptionRef.set(
+          running,
+          Option.some({ folder: clip, startedAt, handle: handle.value, scope }),
+        );
       }).pipe(exclusive, Effect.withSpan("Clips.toggle"));
 
       return Clips.of({
         toggle,
+        changes: SubscriptionRef.changes(running).pipe(
+          Stream.map(Option.map((clip) => clip.startedAt)),
+        ),
         begin: (folder) =>
           Deferred.make<void>().pipe(
             Effect.flatMap((ending) => Ref.set(session, Option.some({ folder, ending }))),

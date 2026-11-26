@@ -5,6 +5,7 @@ import {
   frameName,
   sessionFiles,
   type ClipInfo,
+  type ScreenshotInfo,
   type SessionInfo,
   type TimelineEvent,
 } from "./SessionFolder";
@@ -25,10 +26,20 @@ export interface OverviewClip {
 /** Everything `overview.md` is derived from; all of it can be read back from the session folder. */
 export interface OverviewInput {
   readonly session: SessionInfo;
+  /** Empty in manual mode. */
   readonly events: ReadonlyArray<TimelineEvent>;
+  /** Oldest first. */
+  readonly screenshots: ReadonlyArray<ScreenshotInfo>;
   /** In name order. */
   readonly clips: ReadonlyArray<OverviewClip>;
 }
+
+/**
+ * Whether a session holds nothing: no screenshot, clip or timeline event. A session that ends
+ * like this is discarded rather than logged.
+ */
+export const isEmptySession = (input: OverviewInput): boolean =>
+  input.screenshots.length === 0 && input.clips.length === 0 && input.events.length === 0;
 
 /** What was in front from `from` to `to`, or `null` while the student was idle. */
 export interface Focused {
@@ -159,11 +170,11 @@ const names = (clips: ReadonlyArray<OverviewClip>): string => clips.map((c) => c
 
 /** The text of `overview.md`: the summary agent's map of the session folder. */
 export const renderOverview = (input: OverviewInput): string => {
+  const auto = input.session.mode === "auto";
   const events = sortedEvents(input.events);
   const start = events.find((event) => event.type === "start");
   const stop = events.find((event) => event.type === "stop");
   const segments = segmentsOf(events);
-  const duration = stop?.t ?? events.at(-1)?.t ?? 0;
   // The wall clock at t=0; session.json's start is taken a moment before capture begins.
   const zero = Option.fromNullishOr(start?.at).pipe(
     Option.flatMap((at) => DateTime.make(at)),
@@ -172,13 +183,16 @@ export const renderOverview = (input: OverviewInput): string => {
   // To a tenth of a second: a clip's start is added to every time inside its files.
   const onSessionClock = (at: DateTime.Utc): number =>
     Math.max(0, Math.round((DateTime.toEpochMillis(at) - DateTime.toEpochMillis(zero)) / 100) / 10);
+  const { endedAt } = input.session;
+  const duration =
+    stop?.t ?? (endedAt === null ? (events.at(-1)?.t ?? 0) : onSessionClock(endedAt));
 
   const missing: Array<string> = [];
-  if (stop === undefined)
+  if (auto && stop === undefined)
     missing.push(
       `Kladd stopped without a \`stop\` event (a crash): data ends at t=${Math.floor(duration)}.`,
     );
-  if (start === undefined)
+  if (auto && start === undefined)
     missing.push("No `start` event: which permissions were granted is unknown.");
   if (start?.accessibility === false)
     missing.push(
@@ -197,6 +211,20 @@ export const renderOverview = (input: OverviewInput): string => {
   const cutShort = input.clips.filter((clip) => clip.info.stoppedAt === null);
   if (cutShort.length > 0)
     missing.push(`No stop time for clip ${names(cutShort)} (a crash): its files may be cut short.`);
+
+  const unplaced = input.screenshots.filter((shot) => shot.focus === null);
+  if (unplaced.length > 0)
+    missing.push(
+      `No focus for ${unplaced.length} screenshot(s): which app was in front is unknown.`,
+    );
+
+  const screenshotRows = input.screenshots.map((shot) => {
+    const app = shot.focus?.app?.name ?? "*unknown*";
+    const where = [shot.focus?.title ?? null, ...(shot.focus?.selection ?? []).map((s) => s.text)]
+      .filter((part) => part !== null)
+      .join(" — ");
+    return `| ${onSessionClock(shot.takenAt)} | ${sessionFiles.screenshots}/${shot.id}.png | ${cell(app)} | ${cell(where)} |`;
+  });
 
   const rows = segments.map((segment) => {
     const [app, title] = segment.idle
@@ -226,25 +254,48 @@ export const renderOverview = (input: OverviewInput): string => {
   return [
     "# Session overview",
     "",
-    `Started ${DateTime.formatIso(input.session.startedAt)}. Duration ${clock(duration)} (t=0–${Math.floor(duration)}). Clips: ${input.clips.length}.`,
+    `${auto ? "Automatic" : "Manual"} session, started ${DateTime.formatIso(input.session.startedAt)}. Duration ${clock(duration)} (t=0–${Math.floor(duration)}). Screenshots: ${input.screenshots.length}. Clips: ${input.clips.length}.`,
     "",
     ...(missing.length > 0 ? ["Missing data:", ...missing.map((line) => `- ${line}`), ""] : []),
     "## How to read this folder",
     "",
     "- One clock: `t` is seconds since the session started, in every file and file name outside `clips/`.",
-    `- \`${f.timeline}\`: every event, one JSON object per line, with \`type\` start, stop, focus, frame, idle, active or activity (key and click counts every 10 s, never what was typed). Lines can be out of \`t\` order; sort by \`t\`.`,
-    `- \`${f.frames}/<t>.jpg\`: keyframes (6-digit \`t\`, e.g. ${frameName(65)}.jpg is t=65); \`${f.frames}/<t>.txt\` is its OCR text, missing when OCR failed. \`${f.focus}/<t>.json\`: the focused window at that keyframe.`,
-    `- \`${f.session}\`: start and stop time.`,
-    `- Use \`jq\` and \`grep\` on the \`.jsonl\` files, e.g. \`jq -c 'select(.type=="focus")' ${f.timeline}\`. There is no Python.`,
+    `- \`${f.session}\`: start and end time, and the capture mode: ${auto ? "automatic, so Kladd also saved keyframes of the screen" : "manual, so there is nothing but what the student took"}.`,
+    `- \`${f.screenshots}/<id>.png\`: screenshots the student took. \`${f.screenshots}/<id>.json\` beside each: when it was taken (\`takenAt\`) and \`focus\`, the app, window title and selected rows (such as the current page) in front at that moment.`,
+    ...(auto
+      ? [
+          `- \`${f.timeline}\`: every event, one JSON object per line, with \`type\` start, stop, focus, frame, idle, active or activity (key and click counts every 10 s, never what was typed). Lines can be out of \`t\` order; sort by \`t\`.`,
+          `- \`${f.frames}/<t>.jpg\`: keyframes (6-digit \`t\`, e.g. ${frameName(65)}.jpg is t=65); \`${f.frames}/<t>.txt\` is its OCR text, missing when OCR failed. \`${f.focus}/<t>.json\`: the focused window at that keyframe.`,
+          `- Use \`jq\` and \`grep\` on the \`.jsonl\` files, e.g. \`jq -c 'select(.type=="focus")' ${f.timeline}\`. There is no Python.`,
+        ]
+      : [
+          `- Use \`jq\` and \`grep\` on the JSON files, e.g. \`jq -c '.focus.app' ${f.screenshots}/*.json\`. There is no Python.`,
+        ]),
     "",
-    "## Segments",
+    "## Screenshots",
     "",
-    `One row per stretch in one app and title, or per idle period (no input for 60 s or more). Stretches under ${flickerSeconds} s are merged into the next row; see \`${f.timeline}\` for every switch. Keyframes are \`${f.frames}/<name>.jpg\`, at most ${maxFramesPerRow} listed per row.`,
+    ...(input.screenshots.length === 0
+      ? ["None."]
+      : [
+          "Oldest first. The student took each one to show something; they matter more than anything Kladd saved by itself.",
+          "",
+          "| t | File | App | Window / selection |",
+          "| --- | --- | --- | --- |",
+          ...screenshotRows,
+        ]),
     "",
-    "| t | App | Title / URL | Keyframes |",
-    "| --- | --- | --- | --- |",
-    ...rows,
-    "",
+    ...(auto
+      ? [
+          "## Segments",
+          "",
+          `One row per stretch in one app and title, or per idle period (no input for 60 s or more). Stretches under ${flickerSeconds} s are merged into the next row; see \`${f.timeline}\` for every switch. Keyframes are \`${f.frames}/<name>.jpg\`, at most ${maxFramesPerRow} listed per row.`,
+          "",
+          "| t | App | Title / URL | Keyframes |",
+          "| --- | --- | --- | --- |",
+          ...rows,
+          "",
+        ]
+      : []),
     "## Clips",
     "",
     ...(input.clips.length === 0

@@ -21,7 +21,7 @@ const WritingTarget = ({ info }: { info: LoggingOverlayInfo }) => {
 };
 
 /**
- * LoggingOverlay: sits next to where the user writes their log and opens when a recording stops.
+ * LoggingOverlay: sits next to where the user writes their log and opens when a session ends.
  * The composer goes here; its design is not decided yet.
  */
 export const LoggingOverlay = () => {

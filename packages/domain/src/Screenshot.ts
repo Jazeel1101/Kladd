@@ -1,15 +1,20 @@
 import { Schema } from "effect";
 import { Rect, type Size } from "./Placement";
+import { SessionId } from "./Session";
 
 /** Identifies one screenshot. A UUID, because it also names the screenshot's file and URL. */
 export const ScreenshotId = Schema.String.check(Schema.isUUID()).pipe(Schema.brand("ScreenshotId"));
 export type ScreenshotId = typeof ScreenshotId.Type;
 
-/** A screenshot of the whole main display, taken with ⌃⇧C and attached to the log being written. */
+/**
+ * A screenshot of the whole main display, taken with ⌃⇧C or the pill during a session and saved in
+ * its folder (sessionFiles.screenshots).
+ */
 export class Screenshot extends Schema.Class<Screenshot, { readonly brand: unique symbol }>(
   "Screenshot",
 )({
   id: ScreenshotId,
+  session: SessionId,
   takenAt: Schema.DateTimeUtc,
   /** The display it shows, in points: its size is the screenshot's aspect ratio. */
   display: Rect,
@@ -27,7 +32,7 @@ export const ScreenshotFlight = Schema.Struct({
 export type ScreenshotFlight = typeof ScreenshotFlight.Type;
 
 /**
- * The screenshots of the log being written: the one in flight, if any, and the landed ones, newest
+ * The screenshots of the current session: the one in flight, if any, and the landed ones, newest
  * first.
  */
 export const ScreenshotTray = Schema.Struct({
