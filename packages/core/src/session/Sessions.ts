@@ -38,6 +38,7 @@ import { Ids } from "../ports/Ids";
 import { ScreenCapture } from "../ports/ScreenCapture";
 import { SessionCapture, type SessionCaptureHandle } from "../ports/SessionCapture";
 import { SessionStore, type StoredSession } from "../ports/SessionStore";
+import { SummaryAgent } from "../ports/SummaryAgent";
 import { Transcriber } from "../ports/Transcriber";
 import { Screenshots } from "../screenshot/Screenshots";
 import { Clips } from "./Clips";
@@ -111,6 +112,7 @@ export class Sessions extends Context.Service<
       const screenCapture = yield* ScreenCapture;
       const sessionCapture = yield* SessionCapture;
       const transcriber = yield* Transcriber;
+      const summaryAgent = yield* SummaryAgent;
       const clips = yield* Clips;
       const screenshots = yield* Screenshots;
       const focus = yield* FocusTracker;
@@ -125,14 +127,20 @@ export class Sessions extends Context.Service<
       const layerScope = yield* Effect.scope;
       const asking = yield* Semaphore.make(1);
 
-      // Transcription and overview outlive end, and never fail it: their failures are logged.
-      const finishInBackground = (folder: string) =>
+      // One folder is finished at a time, and the check for unfinished folders looks at each only
+      // once it may run: a session ended at launch is then finished, and summarized, once.
+      const oneAtATime = Semaphore.withPermit(yield* Semaphore.make(1));
+      const finish = (folder: string) =>
         finishSession(folder).pipe(
           Effect.provideService(SessionStore, store),
           Effect.provideService(Clips, clips),
+          Effect.provideService(SummaryAgent, summaryAgent),
           Effect.ignoreCause({ log: "Warn", message: "Could not finish the session folder" }),
-          Effect.forkIn(layerScope),
         );
+
+      // Transcription, overview and summary outlive end, and never fail it: their failures are logged.
+      const finishInBackground = (folder: string) =>
+        finish(folder).pipe(oneAtATime, Effect.forkIn(layerScope));
 
       // Nothing marks a folder finished but its files, so a crash or quit before finishSession
       // leaves it to the next launch. Each runs once per launch: one that keeps failing waits for the next.
@@ -146,13 +154,11 @@ export class Sessions extends Context.Service<
             if (needsModel) yield* clips.transcribe(folder);
             continue;
           }
-          if (yield* store.finished(folder)) continue;
-          if ((yield* store.untranscribed(folder)).length > 0 !== needsModel) continue;
-          yield* finishSession(folder).pipe(
-            Effect.provideService(SessionStore, store),
-            Effect.provideService(Clips, clips),
-            Effect.ignoreCause({ log: "Warn", message: "Could not finish the session folder" }),
-          );
+          yield* Effect.gen(function* () {
+            if (yield* store.finished(folder)) return;
+            if ((yield* store.untranscribed(folder)).length > 0 !== needsModel) return;
+            yield* finish(folder);
+          }).pipe(oneAtATime);
         }
       });
 

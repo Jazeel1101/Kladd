@@ -1,10 +1,18 @@
 import { join, resolve } from "node:path";
-import { ClipCapture, FocusTracker, ScreenCapture, SessionCapture, Transcriber } from "@kladd/core";
+import {
+  ClipCapture,
+  FocusTracker,
+  ScreenCapture,
+  SessionCapture,
+  Transcriber,
+  VideoFrames,
+} from "@kladd/core";
 import {
   FocusTrackerDarwin,
   ScreenCaptureDarwin,
   SessionCaptureDarwin,
   TranscriberDarwin,
+  VideoFramesDarwin,
 } from "@kladd/platform-darwin";
 import { app } from "electron";
 import { Effect, Layer } from "effect";
@@ -37,6 +45,7 @@ export const PlatformLive = Layer.unwrap(
         Layer.effect(SessionCapture, unsupported),
         Layer.effect(ClipCapture, unsupported),
         Layer.effect(Transcriber, unsupported),
+        Layer.effect(VideoFrames, unsupported),
       );
     }
     const helper = captureHelper();
@@ -47,6 +56,7 @@ export const PlatformLive = Layer.unwrap(
       FocusTrackerDarwin(helper),
       // The Whisper model is downloaded once and shared by every recording.
       TranscriberDarwin(helper, join(app.getPath("userData"), "models")),
+      VideoFramesDarwin(helper),
     );
   }),
 );
