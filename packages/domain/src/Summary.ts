@@ -15,3 +15,14 @@ export const summaryInstructions = [
   `Then write \`${sessionFiles.summary}\` in this folder, and nothing else: what the student worked on, in order, with the times (session \`t\`) and the files you saw it in, so they can write their log from it. Stick to what the folder shows; do not guess.`,
   "Write in the language the student speaks in the clips, or else the language on their screen. If that is unclear, write Norwegian bokmål.",
 ].join("\n\n");
+
+/**
+ * The open session's summary (GLOSSARY: "oppsummering") as the logging overlay shows it: being
+ * written, written with the text of `summary.md`, or failed, so the student logs without one.
+ */
+export const SummaryStatus = Schema.Union([
+  Schema.TaggedStruct("Writing", {}),
+  Schema.TaggedStruct("Written", { text: Schema.String }),
+  Schema.TaggedStruct("Failed", {}),
+]);
+export type SummaryStatus = typeof SummaryStatus.Type;

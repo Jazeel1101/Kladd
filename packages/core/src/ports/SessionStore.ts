@@ -45,6 +45,8 @@ export class SessionStore extends Context.Service<
      * `summary.md` unless the session is logged: a log written without one needs none.
      */
     readonly finished: (folder: string) => Effect.Effect<boolean>;
+    /** The folder's `summary.md`, once the summary agent has written it. */
+    readonly summary: (folder: string) => Effect.Effect<Option.Option<string>>;
     /** Where the screenshot `id` goes as a PNG in the folder. Its directory exists once this succeeds. */
     readonly screenshotFile: (folder: string, id: ScreenshotId) => Effect.Effect<string>;
     /** Writes the screenshot's `<id>.json` beside its PNG. */

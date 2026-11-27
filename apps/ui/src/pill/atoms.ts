@@ -4,7 +4,7 @@ import { KladdClient } from "../rpc";
 export const openMenuAtom = KladdClient.mutation("OpenPillMenu");
 /** Moves the pill window while the user drags the notch. Use with `{ payload: { position } }`. */
 export const movePillAtom = KladdClient.mutation("MovePill");
-/** Lets clicks through the pill window's empty space. Use with `{ payload: { clickThrough } }`. */
-export const setClickThroughAtom = KladdClient.mutation("SetPillClickThrough");
+/** Tells main where the notch rests, or null while it moves. Use with `{ payload: { dock } }`. */
+export const setPillDockAtom = KladdClient.mutation("SetPillDock");
 /** Tells main where ⌃⇧C screenshots land in the pill's open tray. Use with `{ payload: { slot } }`. */
 export const setScreenshotSlotAtom = KladdClient.mutation("SetScreenshotSlot");

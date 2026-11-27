@@ -43,6 +43,8 @@ const kladd = (
     readonly stored?: ReadonlyArray<Session>;
     readonly screenshots?: ReadonlyArray<ScreenshotInfo>;
     readonly summary?: ReturnType<typeof SummaryAgentTest>;
+    /** The `summary.md` the store reports for each session id. */
+    readonly summaries?: Readonly<Record<string, string>>;
   } = {},
 ) =>
   Sessions.layer.pipe(
@@ -59,7 +61,7 @@ const kladd = (
         TranscriberTest(),
         options.summary ?? SummaryAgentTest(),
         ClipCaptureTest(),
-        SessionStoreTest(options.stored, options.screenshots),
+        SessionStoreTest(options.stored, options.screenshots, options.summaries),
       ),
     ),
   );
@@ -225,6 +227,42 @@ describe("Sessions", () => {
       const [saved] = yield* store.list;
       assert.isTrue(yield* store.finished(saved?.folder ?? ""));
       assert.deepStrictEqual(yield* state, Option.some("ended"));
+    }).pipe(
+      Effect.provide(
+        kladd({ summary: SummaryAgentTest(new SummaryFailed({ reason: "claude is missing" })) }),
+      ),
+    ),
+  );
+
+  it.effect(
+    "the summary is being written once the session ends, then written from summary.md",
+    () =>
+      Effect.gen(function* () {
+        const sessions = yield* Sessions;
+        assert.isNull(Option.getOrNull(yield* Stream.runHead(sessions.summary)));
+        yield* sessions.start("manual");
+        yield* shoot;
+        yield* sessions.end;
+        yield* TestClock.adjust("1 second");
+        assert.deepStrictEqual(Option.getOrNull(yield* Stream.runHead(sessions.summary)), {
+          _tag: "Written",
+          text: "# Økt",
+        });
+        yield* sessions.finishLogging;
+        assert.isNull(Option.getOrNull(yield* Stream.runHead(sessions.summary)));
+      }).pipe(Effect.provide(kladd({ summaries: { "session-1": "# Økt" } }))),
+  );
+
+  it.effect("the summary failed when finishing leaves no summary.md", () =>
+    Effect.gen(function* () {
+      const sessions = yield* Sessions;
+      yield* sessions.start("manual");
+      yield* shoot;
+      yield* sessions.end;
+      yield* TestClock.adjust("1 second");
+      assert.deepStrictEqual(Option.getOrNull(yield* Stream.runHead(sessions.summary)), {
+        _tag: "Failed",
+      });
     }).pipe(
       Effect.provide(
         kladd({ summary: SummaryAgentTest(new SummaryFailed({ reason: "claude is missing" })) }),

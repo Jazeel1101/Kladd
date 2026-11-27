@@ -15,6 +15,7 @@ import {
   isEmptySession,
   logSession,
   sessionState,
+  type SummaryStatus,
 } from "@kladd/domain";
 import {
   Context,
@@ -104,6 +105,11 @@ export class Sessions extends Context.Service<
     readonly changes: Stream.Stream<Option.Option<Session>>;
     /** Every session that is not active, newest first, then again on every change. */
     readonly past: Stream.Stream<ReadonlyArray<PastSession>>;
+    /**
+     * The ended session's summary, as its folder is finished: being written, written or failed.
+     * Null without an ended session. Now, then every change.
+     */
+    readonly summary: Stream.Stream<SummaryStatus | null>;
   }
 >()("kladd/core/Sessions") {
   static readonly layer = Layer.effect(
@@ -120,6 +126,21 @@ export class Sessions extends Context.Service<
       const ids = yield* Ids;
       const logging = yield* LoggingOverlay;
       const open = yield* SubscriptionRef.make(Option.none<StoredSession>());
+      // The ended session's folder and how far its summary is; null without an ended session.
+      const summary = yield* SubscriptionRef.make<{
+        readonly folder: string;
+        readonly status: SummaryStatus;
+      } | null>(null);
+      const writing = { _tag: "Writing" } as const;
+      // What finishing left in the folder: a summary, or none, as the agent failed.
+      const summarized = (folder: string) =>
+        Effect.map(
+          store.summary(folder),
+          Option.match({
+            onNone: (): SummaryStatus => ({ _tag: "Failed" }),
+            onSome: (text): SummaryStatus => ({ _tag: "Written", text }),
+          }),
+        );
       const running = yield* Ref.make(Option.none<Running>());
       // Start, end and finishLogging check, then change, the open session; one at a time.
       const exclusive = Semaphore.withPermit(yield* Semaphore.make(1));
@@ -136,6 +157,16 @@ export class Sessions extends Context.Service<
           Effect.provideService(Clips, clips),
           Effect.provideService(SummaryAgent, summaryAgent),
           Effect.ignoreCause({ log: "Warn", message: "Could not finish the session folder" }),
+          Effect.andThen(
+            Effect.gen(function* () {
+              if ((yield* SubscriptionRef.get(summary))?.folder !== folder) return;
+              const status = yield* summarized(folder);
+              // Logging may have closed it meanwhile.
+              yield* SubscriptionRef.update(summary, (now) =>
+                now?.folder === folder ? { folder, status } : now,
+              );
+            }),
+          ),
         );
 
       // Transcription, overview and summary outlive end, and never fail it: their failures are logged.
@@ -175,6 +206,7 @@ export class Sessions extends Context.Service<
         }
         const ended = endSession(session, at);
         yield* store.update(folder, ended);
+        yield* SubscriptionRef.set(summary, { folder, status: writing });
         yield* SubscriptionRef.set(open, Option.some({ folder, session: ended }));
         yield* screenshots.begin(session.id, folder);
         yield* screenshots.end;
@@ -275,6 +307,9 @@ export class Sessions extends Context.Service<
         const now = yield* DateTime.now;
         const due = autoEndAt(session, capturesIn(yield* store.read(folder)));
         if (sessionState(session) !== "active") {
+          // Without its summary.md, finishUnfinished writes it below.
+          const status = (yield* store.finished(folder)) ? yield* summarized(folder) : writing;
+          yield* SubscriptionRef.set(summary, { folder, status });
           yield* SubscriptionRef.set(open, Option.some(unlogged));
           yield* screenshots.begin(session.id, folder);
           yield* screenshots.end;
@@ -340,6 +375,7 @@ export class Sessions extends Context.Service<
           const { folder, session } = current.value;
           const logged = logSession(session, yield* DateTime.now);
           yield* store.update(folder, logged);
+          yield* SubscriptionRef.set(summary, null);
           yield* SubscriptionRef.set(open, Option.none());
           yield* screenshots.clear;
           return logged;
@@ -379,6 +415,7 @@ export class Sessions extends Context.Service<
         ),
         changes,
         past: Stream.mapEffect(changes, () => pastSessions),
+        summary: SubscriptionRef.changes(summary).pipe(Stream.map((now) => now?.status ?? null)),
       });
     }),
   );

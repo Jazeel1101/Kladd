@@ -191,6 +191,12 @@ export const SessionStoreFile = Layer.effect(
       );
     }, Effect.orDie);
 
+    const summary = Effect.fn("SessionStoreFile.summary")(function* (folder: string) {
+      const file = path.join(folder, sessionFiles.summary);
+      if (!(yield* fs.exists(file))) return Option.none<string>();
+      return Option.some(yield* fs.readFileString(file));
+    }, Effect.orDie);
+
     const writeClip = Effect.fn("SessionStoreFile.writeClip")(function* (
       clip: string,
       info: ClipInfo,
@@ -272,6 +278,7 @@ export const SessionStoreFile = Layer.effect(
       remove,
       folder,
       finished,
+      summary,
       screenshotFile,
       saveScreenshot,
       screenshots,

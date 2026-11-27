@@ -1,6 +1,7 @@
 import { OverlayWindows } from "@kladd/core";
 import {
-  placeWithoutAnchor,
+  overlayMargin,
+  placeWithoutPill,
   type Point,
   type Rect,
   type Size,
@@ -43,8 +44,6 @@ interface WindowSpec {
    * never takes the pointer or focus, and keeps animating while it is hidden.
    */
   readonly effect?: true;
-  /** The user can drag it by its UI's drag region (`-webkit-app-region: drag`). Overlays default to fixed. */
-  readonly movable?: true;
 }
 
 /**
@@ -82,12 +81,14 @@ const windowTable: Record<WindowKind, WindowSpec> = {
     position: (_size, area) => area,
   },
   logging: {
-    size: { width: 360, height: 480 },
+    // A 2:3 panel, and room around it for the shadow the UI draws round the panel and its neck
+    // into the pill (apps/ui/src/logging/LoggingOverlay.tsx).
+    size: { width: 360 + 2 * overlayMargin, height: 540 + 2 * overlayMargin },
     overlay: true,
-    // By its header. The next open places it again; following focus only changes its text.
-    movable: true,
-    // Normally placed by core's LoggingOverlay; this is only the fallback.
-    position: placeWithoutAnchor,
+    noShadow: true,
+    clickThrough: true,
+    // Normally grown out of the pill by core's LoggingOverlay; this is only the fallback.
+    position: placeWithoutPill,
   },
   expanded: {
     size: { width: 720, height: 560 },
@@ -148,7 +149,6 @@ const createWindow = (spec: WindowSpec) => {
   const window = new BrowserWindow({
     ...(spec.overlay ? overlayOptions : { title: "Kladd" }),
     ...(spec.noShadow ? { hasShadow: false } : {}),
-    ...(spec.movable ? { movable: true } : {}),
     ...(spec.effect ? { focusable: false, enableLargerThanScreen: true } : {}),
     // Already where it opens, so its UI reads its real position while it loads (the pill does).
     ...defaultBounds(spec, workArea(null)),
@@ -245,6 +245,14 @@ export const OverlayWindowsLive = Layer.effect(
         if (window !== undefined && !window.isDestroyed()) window.hide();
       }).pipe(Effect.withSpan("OverlayWindows.hide"));
 
+    // On macOS, blur orders the panel out and back in, which hands key focus back to the active
+    // app: the one the user writes in, since showing and clicking a panel never activates Kladd.
+    const blur = (kind: WindowKind) =>
+      Effect.sync(() => {
+        const window = open.get(kind)?.window;
+        if (window !== undefined && !window.isDestroyed() && window.isFocused()) window.blur();
+      }).pipe(Effect.withSpan("OverlayWindows.blur"));
+
     const moveTo = Effect.fn("OverlayWindows.moveTo")(function* (
       kind: WindowKind,
       position: Point,
@@ -264,6 +272,7 @@ export const OverlayWindowsLive = Layer.effect(
     return OverlayWindows.of({
       show,
       hide,
+      blur,
       prepare: (kind) => get(kind).pipe(Effect.asVoid),
       moveTo,
       setClickThrough,

@@ -35,7 +35,7 @@ const packages = {
     workspace: ["domain"],
     npm: [],
     node: false,
-    hint: "adapters are pure: each picks an anchor from a FocusSnapshot and never calls the OS. If an adapter needs more data, add a field to FocusSnapshot in packages/domain and fill it in packages/platform-<os>. See docs/operations/adding-app-support.md.",
+    hint: "adapters are pure: each reads a FocusSnapshot and never calls the OS. If an adapter needs more data, add a field to FocusSnapshot in packages/domain and fill it in packages/platform-<os>. See docs/operations/adding-app-support.md.",
   },
   infra: {
     dir: "packages/infra",

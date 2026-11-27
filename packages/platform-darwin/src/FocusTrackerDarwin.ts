@@ -90,6 +90,19 @@ export const FocusTrackerDarwin = (helper: CaptureHelper) =>
         Effect.withSpan("FocusTrackerDarwin.requestPermission"),
       );
 
-      return FocusTracker.of({ current, watch, permission, requestPermission });
+      // LaunchServices activates the app as its Dock icon does, which works from a background
+      // process. No permission needed, so it runs `open` rather than the helper.
+      const activate = Effect.fn("FocusTrackerDarwin.activate")(function* (bundleId: string) {
+        const code = yield* spawner
+          .exitCode(ChildProcess.make("/usr/bin/open", ["-b", bundleId]))
+          .pipe(Effect.mapError(failed));
+        if (Number(code) !== 0) {
+          return yield* new FocusTrackingFailed({
+            reason: `open -b ${bundleId} exited with ${code}`,
+          });
+        }
+      });
+
+      return FocusTracker.of({ current, watch, permission, requestPermission, activate });
     }),
   );

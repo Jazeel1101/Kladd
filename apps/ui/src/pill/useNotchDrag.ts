@@ -6,8 +6,8 @@ import {
   type MouseEvent as ReactMouseEvent,
   type PointerEvent,
 } from "react";
-import { hideWindowAtom, showWindowAtom } from "../windows/atoms";
-import { movePillAtom, setClickThroughAtom, setScreenshotSlotAtom } from "./atoms";
+import { hideWindowAtom, setClickThroughAtom, showWindowAtom } from "../windows/atoms";
+import { movePillAtom, setPillDockAtom, setScreenshotSlotAtom } from "./atoms";
 import { screenshotSlot } from "./intake";
 import {
   clampCenter,
@@ -76,6 +76,7 @@ export const useNotchDrag = (length: number) => {
   const showWindow = useAtomSet(showWindowAtom);
   const hideWindow = useAtomSet(hideWindowAtom);
   const setScreenshotSlot = useAtomSet(setScreenshotSlotAtom);
+  const setPillDock = useAtomSet(setPillDockAtom);
   const [frame, setFrame] = useState<NotchFrame>(() => startFrame(length));
   const [moving, setMoving] = useState(false);
   const [liquid, setLiquid] = useState<Liquid>(() => dockedLiquid("left"));
@@ -198,7 +199,7 @@ export const useNotchDrag = (length: number) => {
     const update = (passThrough: boolean) => {
       if (passThrough === clickThrough.current) return;
       clickThrough.current = passThrough;
-      setClickThrough({ payload: { clickThrough: passThrough } });
+      setClickThrough({ payload: { kind: "pill", clickThrough: passThrough } });
     };
     const onMove = (event: MouseEvent) => {
       const overNotch =
@@ -277,6 +278,19 @@ export const useNotchDrag = (length: number) => {
     if (moving) return;
     setScreenshotSlot({ payload: { slot: screenshotSlot(frame, workArea()) } });
   }, [frame, moving, setScreenshotSlot]);
+
+  // The logging overlay grows out of the notch where it rests, and lets go of it while it moves.
+  // Sent only when it changes: a drag re-renders every frame.
+  const sentDock = useRef<string | null>(null);
+  useEffect(() => {
+    const { box, window: at, wall } = frame;
+    const notch = { x: at.x + box.left, y: at.y + box.top, width: box.width, height: box.height };
+    const dock = moving ? null : { notch, wall };
+    const key = JSON.stringify(dock);
+    if (key === sentDock.current) return;
+    sentDock.current = key;
+    setPillDock({ payload: { dock } });
+  });
 
   const view = viewLiquid(liquid, frame, performance.now());
   // The liquid also moves on its own (sinking back, the pull ramping in): redraw until it settles.

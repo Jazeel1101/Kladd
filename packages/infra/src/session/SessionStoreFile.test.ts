@@ -191,8 +191,10 @@ describe("SessionStoreFile", () => {
         assert.deepStrictEqual(yield* store.untranscribed(folder), []);
         // The summary agent was stopped before it wrote summary.md.
         assert.isFalse(yield* store.finished(folder));
+        assert.isTrue(Option.isNone(yield* store.summary(folder)));
         yield* fs.writeFileString(`${folder}/summary.md`, "# Oppsummering\n");
         assert.isTrue(yield* store.finished(folder));
+        assert.deepStrictEqual(yield* store.summary(folder), Option.some("# Oppsummering\n"));
         const { clips } = yield* store.read(folder);
         assert.deepStrictEqual(
           clips.map(({ name, sound, segments, marks, info }) => ({

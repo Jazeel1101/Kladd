@@ -1,5 +1,6 @@
 export * from "./AppAdapter";
 export * from "./Focus";
+export * from "./LoggingOverlay";
 export * from "./Overview";
 export * from "./PastSession";
 export * from "./Placement";

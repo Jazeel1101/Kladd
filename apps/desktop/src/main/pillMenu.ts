@@ -24,6 +24,8 @@ export const PillMenuLive = Layer.effect(
     const open = Effect.gen(function* () {
       const state = Option.map(yield* sessions.current, sessionState);
       const clip = Option.flatten(yield* Stream.runHead(clips.changes));
+      const overlay = yield* Stream.runHead(logging.changes);
+      const overlayOpen = Option.exists(overlay, (now) => now.open);
       const forState: ReadonlyArray<MenuItemConstructorOptions> = Option.match(state, {
         // Auto mode is coming; until then the mode is shown, not chosen.
         onNone: () => [
@@ -48,13 +50,22 @@ export const PillMenuLive = Layer.effect(
                 { type: "separator" },
                 { label: "End session", click: run(actions.end) },
               ]
-            : [{ label: "Done logging", click: run(actions.finishLogging) }],
+            : [
+                { label: "Log settings", click: run(logging.toggleSettings) },
+                {
+                  label: "Log assistant",
+                  type: "checkbox",
+                  checked: overlayOpen,
+                  click: run(logging.toggle),
+                },
+                { label: "Done logging", click: run(actions.finishLogging) },
+              ],
       });
       const menu = Menu.buildFromTemplate([
         ...forState,
         { type: "separator" },
         // Opens it in any state: for trying app adapters in the app the user is in.
-        { label: "Show logging overlay", click: run(logging.open) },
+        { label: "Show logging overlay", enabled: !overlayOpen, click: run(logging.open) },
         { type: "separator" },
         { label: "Past sessions…", click: run(windows.show("expanded")) },
         { label: "Settings…", click: run(windows.show("settings")) },
