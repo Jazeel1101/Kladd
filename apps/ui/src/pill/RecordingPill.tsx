@@ -1,23 +1,21 @@
 import { useAtomSet, useAtomValue } from "@effect/atom-react";
 import { Button } from "@ui-sdk/react/button";
-import { elapsed, sessionState } from "@kladd/domain";
+import { elapsed, sessionState, type Session } from "@kladd/domain";
 import { DateTime, Duration } from "effect";
 import { AsyncResult } from "effect/reactivity";
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { cn } from "../lib/cn";
 import {
-  clipAtom,
   endSessionAtom,
   finishLoggingAtom,
   openLoggingOverlayAtom,
   sessionAtom,
   startSessionAtom,
   takeScreenshotAtom,
-  toggleClipAtom,
 } from "../session/atoms";
 import { openMenuAtom } from "./atoms";
 import type { Orientation, Wall } from "./notchPlacement";
-import { attractRange, canvas, dropParts, dropPath } from "./notchShape";
+import { attractRange, canvas, dropParts, dropPath, pillLength } from "./notchShape";
 import { panelBeside, panelFromWall, roundedPath, trayRects } from "./intake";
 import { useNotchDrag, workArea } from "./useNotchDrag";
 import { useScreenshotIntake } from "./useScreenshotIntake";
@@ -50,16 +48,16 @@ const path = (d: string) => `path("${d}")`;
  * The resting shapes, read by the `.notch-drop` rules in styles.css: docked ones swell on hover and
  * squish on press; a floating pill stays as it is.
  */
-const restingVars = (docked: boolean, offset: number, along: number): ShapeVars => {
+const restingVars = (docked: boolean, offset: number, along: number, length: number): ShapeVars => {
   if (!docked) {
     // Shaped as if out of every wall's reach, wherever it sits in the window.
-    const plain = path(dropPath({ gap: offset, top: along, shapeGap: attractRange }));
+    const plain = path(dropPath({ gap: offset, length, top: along, shapeGap: attractRange }));
     return { "--drop-rest": plain, "--drop-hover": plain, "--drop-press": plain };
   }
   return {
-    "--drop-rest": path(dropPath({ gap: 0, top: along })),
-    "--drop-hover": path(dropPath({ gap: 0, top: along, reach: 52 })),
-    "--drop-press": path(dropPath({ gap: 0, top: along, reach: 43 })),
+    "--drop-rest": path(dropPath({ gap: 0, length, top: along })),
+    "--drop-hover": path(dropPath({ gap: 0, length, top: along, reach: 52 })),
+    "--drop-press": path(dropPath({ gap: 0, length, top: along, reach: 43 })),
   };
 };
 
@@ -158,13 +156,6 @@ const ScreenshotIcon = () => (
   </svg>
 );
 
-/** A rounded square: end the session. */
-const StopIcon = () => (
-  <svg {...icon}>
-    <rect x="4" y="4" width="8" height="8" rx="1.5" fill="currentColor" stroke="none" />
-  </svg>
-);
-
 /** A pencil: write the log, in the logging overlay. */
 const WriteIcon = () => (
   <svg {...icon}>
@@ -179,7 +170,7 @@ const DoneIcon = () => (
   </svg>
 );
 
-/** Static: a ring to start, a lit red dot while recording. */
+/** Static: a ring to start a session, a lit red dot to end the one recording. */
 const RecordIndicator = ({ recording }: { readonly recording: boolean }) => (
   <span
     className={cn(
@@ -199,22 +190,17 @@ const RecordIndicator = ({ recording }: { readonly recording: boolean }) => (
 );
 
 /**
- * The pill's buttons for each state of the open session (domain sessionState): none, so start one or
- * look at past sessions; active, so take screenshots and clips or end it; ended, so write the log
- * (logging mode, GLOSSARY: "loggemodus") and tick it off.
+ * The pill's buttons after Past sessions, for the open session (domain sessionState): none, so the
+ * ring starts one; active, so take screenshots, or end it with the lit red dot; ended, so write the
+ * log (logging mode, GLOSSARY: "loggemodus") and tick it off. Clips are taken with ⌥⇧C and the menu.
  */
-const SessionButtons = () => {
-  const opened = useAtomValue(sessionAtom);
-  const clipping = useAtomValue(clipAtom);
-  const session = AsyncResult.isSuccess(opened) ? opened.value : null;
-  const clip = AsyncResult.isSuccess(clipping) ? clipping.value : null;
+const SessionButtons = ({ session }: { readonly session: Session | null }) => {
   const state = session === null ? null : sessionState(session);
   const now = useNow(state === "active");
   const start = useAtomSet(startSessionAtom);
   const end = useAtomSet(endSessionAtom);
   const finishLogging = useAtomSet(finishLoggingAtom);
   const screenshot = useAtomSet(takeScreenshotAtom);
-  const toggleClip = useAtomSet(toggleClipAtom);
   const openLogging = useAtomSet(openLoggingOverlayAtom);
   const run = (action: (options: { payload: undefined }) => void) => () =>
     action({ payload: undefined });
@@ -248,21 +234,11 @@ const SessionButtons = () => {
         <ScreenshotIcon />
       </NotchButton>
       <NotchButton
-        label={
-          clip === null
-            ? "Start clip (⌥⇧C)"
-            : `Stop clip (${formatElapsed(DateTime.distance(clip, now))})`
-        }
-        className={cn("size-9", clip !== null && "text-red-500 hover:text-red-400")}
-        onClick={run(toggleClip)}
-      >
-        <RecordIndicator recording={clip !== null} />
-      </NotchButton>
-      <NotchButton
         label={`End session (${formatElapsed(elapsed(session, now))})`}
+        className="size-9 text-red-500 hover:text-red-400"
         onClick={run(end)}
       >
-        <StopIcon />
+        <RecordIndicator recording />
       </NotchButton>
     </>
   );
@@ -271,15 +247,14 @@ const SessionButtons = () => {
 /**
  * The settings panel (src/pill/intake.ts) slides out when the chevron is clicked, and back when it
  * is clicked again: out of the wall, pushing a docked pill off it, or out of a floating pill as its
- * tray. It shuts at once when the pill is dragged, and slides shut when a session starts, which
- * hides the chevron, or a screenshot comes in.
+ * tray. It shuts at once when the pill is dragged, and slides shut when a screenshot comes in.
  */
-const useSettingsPanel = (moving: boolean, busy: boolean) => {
+const useSettingsPanel = (moving: boolean, intaking: boolean) => {
   const [still] = useState(() => window.matchMedia("(prefers-reduced-motion: reduce)").matches);
   const [panel, setPanel] = useState<"open" | "closing" | null>(null);
   const close = () => setPanel((now) => (now === "open" ? (still ? null : "closing") : now));
   if (moving && panel !== null) setPanel(null);
-  else if (busy && panel === "open") setPanel(still ? null : "closing");
+  else if (intaking && panel === "open") setPanel(still ? null : "closing");
   return {
     panel,
     toggle: () => (panel === "open" ? close() : setPanel("open")),
@@ -297,15 +272,13 @@ const useSettingsPanel = (moving: boolean, busy: boolean) => {
 export const RecordingPill = () => {
   const opened = useAtomValue(sessionAtom);
   const openMenu = useAtomSet(openMenuAtom);
-  const active =
-    AsyncResult.isSuccess(opened) &&
-    opened.value !== null &&
-    sessionState(opened.value) === "active";
-  const { frame, moving, liquid, turns, handlers } = useNotchDrag();
+  const session = AsyncResult.isSuccess(opened) ? opened.value : null;
+  const idle = session === null || sessionState(session) === "logged";
+  const { frame, moving, liquid, turns, handlers } = useNotchDrag(pillLength(idle ? 2 : 3));
   const { box, drawWall, orientation } = frame;
 
   const intake = useScreenshotIntake(frame);
-  const settings = useSettingsPanel(moving, active || intake.landing !== null);
+  const settings = useSettingsPanel(moving, intake.landing !== null);
   const fromWall =
     settings.panel !== null && frame.wall !== null
       ? panelFromWall({ ...frame, wall: frame.wall })
@@ -327,8 +300,8 @@ export const RecordingPill = () => {
   const pushed = cn("notch-push", settings.panel === "closing" && "shutting");
   const pushStyle = { translate: `${push.x}px ${push.y}px` };
   const resting = useMemo(
-    () => restingVars(frame.wall !== null, frame.offset, frame.along),
-    [frame.wall, frame.offset, frame.along],
+    () => restingVars(frame.wall !== null, frame.offset, frame.along, frame.length),
+    [frame.wall, frame.offset, frame.along, frame.length],
   );
   const tray = intake.landing === null ? null : trayRects(frame, intake.landing);
   const trayVars: ShapeVars | null =
@@ -342,6 +315,7 @@ export const RecordingPill = () => {
   // the wall's liquid doesn't, and once the pill leaves the wall only the pill follows it.
   const parts = dropParts({
     gap: frame.offset,
+    length: frame.length,
     top: frame.along,
     shapeGap: liquid.shapeGap,
     lean: liquid.attached,
@@ -494,15 +468,13 @@ export const RecordingPill = () => {
             rotate: `${frame.tilt}deg`,
           }}
         >
-          {!active && (
-            <NotchButton
-              label={settings.panel === "open" ? "Close settings" : "Settings"}
-              onClick={settings.toggle}
-            >
-              <ExpandIcon angle={awayFrom[drawWall] + (settings.panel === "open" ? 180 : 0)} />
-            </NotchButton>
-          )}
-          <SessionButtons />
+          <NotchButton
+            label={settings.panel === "open" ? "Close settings" : "Settings"}
+            onClick={settings.toggle}
+          >
+            <ExpandIcon angle={awayFrom[drawWall] + (settings.panel === "open" ? 180 : 0)} />
+          </NotchButton>
+          <SessionButtons session={session} />
         </div>
       </div>
     </div>

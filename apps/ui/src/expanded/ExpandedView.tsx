@@ -83,7 +83,7 @@ export const ExpandedView = () => {
         </Button>
       </header>
       {past.length === 0 ? (
-        <p className="text-neutral-600">Ingen økter ennå. Start en fra pillen.</p>
+        <p className="text-neutral-600">Ingen tidligere økter ennå.</p>
       ) : (
         <ul className="flex flex-col gap-2 overflow-y-auto">
           {past.map((p) => (

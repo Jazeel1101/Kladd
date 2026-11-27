@@ -45,10 +45,15 @@ export const clipFiles = {
   marks: "marks.jsonl",
   /** After the clip stops: one TranscriptSegment per line. */
   transcript: "transcript.jsonl",
+  /** `<t>.jpg`, frames of the video the summary agent asked for, named by clipFrameName. */
+  frames: "frames",
 } as const;
 
 /** The folder name of a session's nth clip, from 1: 3 -> "003". */
 export const clipName = (n: number): string => String(n).padStart(3, "0");
+
+/** A clip frame's file name, `t` to a tenth of a second: 12.345 -> "12.3.jpg". */
+export const clipFrameName = (t: number): string => `${(Math.round(t * 10) / 10).toFixed(1)}.jpg`;
 
 /** `clip.json`. */
 export const ClipInfo = Schema.Struct({
@@ -156,7 +161,7 @@ export const ScreenshotInfo = Schema.Struct({
 export type ScreenshotInfo = typeof ScreenshotInfo.Type;
 
 /**
- * Apps whose windows are left out of the video and keyframes, and whose files are never readable: password managers and Messages.
+ * Apps whose windows are left out of the video and keyframes, and whose window titles are left out of focus: password managers and Messages.
  */
 export const excludedApps: ReadonlyArray<string> = [
   "com.1password.1password",
@@ -168,34 +173,6 @@ export const excludedApps: ReadonlyArray<string> = [
   "com.apple.Passwords",
   "com.apple.MobileSMS",
 ];
-
-/**
- * A path containing one of these is private: never readable by the summary agent. Caches, Apple background services, credentials and excluded apps.
- */
-export const deniedPathFragments: ReadonlyArray<string> = [
-  "/Library/Caches/",
-  "/Library/Keychains/",
-  "/Library/Cookies/",
-  "/Library/Messages/",
-  "/Library/Biome/",
-  "/Library/Application Support/AppleMediaServices",
-  "/Library/Application Support/com.apple.",
-  "/Library/Containers/com.apple.",
-  "/Library/Group Containers/group.com.apple.",
-  "/Library/Daemon Containers/",
-  "/Library/Metadata/",
-  "/Library/Saved Application State/",
-  "/com.apple.routined",
-  "/ScreenTimeAgent",
-  "/.ssh/",
-  "/.gnupg/",
-  "/.aws/",
-  "/.netrc",
-  ...excludedApps.map((bundleId) => `/${bundleId}`),
-];
-
-export const isDeniedPath = (path: string): boolean =>
-  deniedPathFragments.some((fragment) => path.includes(fragment));
 
 /**
  * Focus as a session folder may keep it: an excluded app's window title and selected rows (a
@@ -211,3 +188,9 @@ export class TranscriptionFailed extends Schema.TaggedError<
   TranscriptionFailed,
   { readonly brand: unique symbol }
 >()("TranscriptionFailed", { reason: Schema.String }) {}
+
+/** A frame could not be taken from a video: no such file, or `t` past its end. */
+export class VideoFrameFailed extends Schema.TaggedError<
+  VideoFrameFailed,
+  { readonly brand: unique symbol }
+>()("VideoFrameFailed", { reason: Schema.String }) {}

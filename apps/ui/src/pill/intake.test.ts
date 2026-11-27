@@ -1,11 +1,15 @@
 import { assert, describe, it } from "@effect/vitest";
 import { panelBeside, panelFromWall, screenshotSlot, trayRects } from "./intake";
 import { frameAt } from "./notchPlacement";
+import { pillLength } from "./notchShape";
+
+/** The pill with three buttons. */
+const long = pillLength(3);
 
 const area = { left: 0, top: 0, right: 1440, bottom: 900 };
-const leftWall = frameAt({ x: 23, y: 450 }, "column", "left", area);
+const leftWall = frameAt({ x: 23, y: 450 }, "column", "left", area, long);
 /** Floating left of the middle: more of the screen lies to its right. */
-const floating = frameAt({ x: 500, y: 450 }, "column", null, area);
+const floating = frameAt({ x: 500, y: 450 }, "column", null, area, long);
 
 describe("screenshotSlot", () => {
   it("leaves the strip by the left wall to the buttons and keeps to it", () => {
@@ -16,7 +20,7 @@ describe("screenshotSlot", () => {
   });
 
   it("opens upward from the bottom wall, ending at the pill", () => {
-    const frame = frameAt({ x: 720, y: 877 }, "row", "bottom", area);
+    const frame = frameAt({ x: 720, y: 877 }, "row", "bottom", area, long);
     assert.deepStrictEqual(screenshotSlot(frame, area), {
       room: { x: 663, y: 382, width: 114, height: 472 },
       hug: "bottom",
@@ -28,7 +32,7 @@ describe("screenshotSlot", () => {
       room: { x: 523, y: 393, width: 215, height: 114 },
       hug: "left",
     });
-    const nearRight = frameAt({ x: 1100, y: 450 }, "column", null, area);
+    const nearRight = frameAt({ x: 1100, y: 450 }, "column", null, area, long);
     assert.deepStrictEqual(screenshotSlot(nearRight, area), {
       room: { x: 862, y: 393, width: 215, height: 114 },
       hug: "right",
@@ -66,7 +70,7 @@ describe("settings panel", () => {
     const left = panelFromWall({ ...leftWall, wall: "left" });
     assert.deepStrictEqual(left.push, { x: 300, y: 0 });
     assert.deepStrictEqual(left.content, { x: 0, y: 150, width: 300, height: 260 });
-    const frame = frameAt({ x: 720, y: 877 }, "row", "bottom", area);
+    const frame = frameAt({ x: 720, y: 877 }, "row", "bottom", area, long);
     const bottom = panelFromWall({ ...frame, wall: "bottom" });
     assert.deepStrictEqual(bottom.push, { x: 0, y: -300 });
     assert.strictEqual(bottom.content.y + bottom.content.height, 560);

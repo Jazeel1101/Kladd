@@ -15,6 +15,7 @@ import {
   SessionCaptureLog,
   SessionCaptureTest,
   SessionStoreTest,
+  SummaryAgentTest,
   TranscriberTest,
 } from "../testing";
 import { Clips } from "./Clips";
@@ -32,6 +33,7 @@ const kladdWith = (capture: ReturnType<typeof ClipCaptureTest>) =>
         AppAdaptersTest(),
         SessionCaptureTest(),
         TranscriberTest(),
+        SummaryAgentTest(),
         capture,
         OverlayWindowsTest,
         SessionStoreTest(),

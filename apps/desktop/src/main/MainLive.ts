@@ -1,7 +1,7 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { Generic, appAdapters } from "@kladd/adapters";
 import { AppAdapters, Clips, LoggingOverlay, Screenshots, Sessions } from "@kladd/core";
-import { IdsLive, SessionStoreFile, StorageConfig } from "@kladd/infra";
+import { IdsLive, SessionStoreFile, StorageConfig, SummaryAgentClaude } from "@kladd/infra";
 import { app } from "electron";
 import { Layer } from "effect";
 import { ElectronAppLive } from "./app";
@@ -35,6 +35,7 @@ const ElectronPortsLive = OverlayWindowsLive.pipe(Layer.provide(ElectronAppLive)
 const CoreLive = Sessions.layer.pipe(
   Layer.provideMerge(Layer.mergeAll(LoggingOverlay.layer, Clips.layer, Screenshots.layer)),
   Layer.provideMerge(SessionStoreFile),
+  Layer.provide(SummaryAgentClaude),
   Layer.provide([PlatformLive, IdsLive, AppAdaptersLive]),
   Layer.provideMerge(ElectronPortsLive),
   // NodeServices also gives PlatformLive its ChildProcessSpawner (the macOS capture helper).

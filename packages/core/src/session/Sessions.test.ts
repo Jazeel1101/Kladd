@@ -5,6 +5,7 @@ import {
   type ScreenshotInfo,
   Session,
   SessionId,
+  SummaryFailed,
   sessionState,
 } from "@kladd/domain";
 import { DateTime, Effect, Layer, Option, Ref, Stream } from "effect";
@@ -25,6 +26,8 @@ import {
   SessionCaptureLog,
   SessionCaptureTest,
   SessionStoreTest,
+  SummaryAgentLog,
+  SummaryAgentTest,
   TranscriberLog,
   TranscriberTest,
 } from "../testing";
@@ -39,6 +42,7 @@ const kladd = (
     /** What earlier launches left in the store, oldest first, and their screenshots. */
     readonly stored?: ReadonlyArray<Session>;
     readonly screenshots?: ReadonlyArray<ScreenshotInfo>;
+    readonly summary?: ReturnType<typeof SummaryAgentTest>;
   } = {},
 ) =>
   Sessions.layer.pipe(
@@ -53,6 +57,7 @@ const kladd = (
         OverlayWindowsTest,
         options.session ?? SessionCaptureTest(),
         TranscriberTest(),
+        options.summary ?? SummaryAgentTest(),
         ClipCaptureTest(),
         SessionStoreTest(options.stored, options.screenshots),
       ),
@@ -172,6 +177,59 @@ describe("Sessions", () => {
       assert.deepStrictEqual(saved?.session, ended);
       assert.deepStrictEqual(yield* shownWindows, ["logging"]);
     }).pipe(Effect.provide(kladd())),
+  );
+
+  it.effect("end summarizes the folder once its overview is written", () =>
+    Effect.gen(function* () {
+      const sessions = yield* Sessions;
+      const store = yield* SessionStore;
+      // Let launch's check for unfinished folders run first, as it does in Kladd.
+      yield* TestClock.adjust("1 second");
+      yield* sessions.start("manual");
+      yield* shoot;
+      yield* sessions.end;
+      yield* TestClock.adjust("1 second");
+      const [saved] = yield* store.list;
+      assert.isTrue(yield* store.finished(saved?.folder ?? ""));
+      assert.deepStrictEqual(yield* Ref.get(yield* SummaryAgentLog), ["/sessions/session-1"]);
+    }).pipe(Effect.provide(kladd())),
+  );
+
+  it.effect("a logged session left unfinished gets its overview at launch, but no summary", () =>
+    Effect.gen(function* () {
+      yield* TestClock.adjust("1 second");
+      assert.isTrue(yield* (yield* SessionStore).finished("/sessions/old"));
+      assert.deepStrictEqual(yield* Ref.get(yield* SummaryAgentLog), []);
+    }).pipe(
+      Effect.provide(
+        kladd({
+          stored: [
+            stored("old", {
+              endedAt: DateTime.makeUnsafe(1000),
+              loggedAt: DateTime.makeUnsafe(2000),
+            }),
+          ],
+        }),
+      ),
+    ),
+  );
+
+  it.effect("a failed summary still leaves the session ended and its overview written", () =>
+    Effect.gen(function* () {
+      const sessions = yield* Sessions;
+      const store = yield* SessionStore;
+      yield* sessions.start("manual");
+      yield* shoot;
+      yield* sessions.end;
+      yield* TestClock.adjust("1 second");
+      const [saved] = yield* store.list;
+      assert.isTrue(yield* store.finished(saved?.folder ?? ""));
+      assert.deepStrictEqual(yield* state, Option.some("ended"));
+    }).pipe(
+      Effect.provide(
+        kladd({ summary: SummaryAgentTest(new SummaryFailed({ reason: "claude is missing" })) }),
+      ),
+    ),
   );
 
   it.effect("finishLogging marks the session logged, closes the overlay and allows a new one", () =>

@@ -27,13 +27,13 @@ We can't compromise on these.
 
 The Electron main process is the backend; every window is a thin view over it, picked by URL hash (`#pill`) from one window table in `apps/desktop/src/main/windows.ts`:
 
-| Window             | Where                                                                 | Shows                                                                                                             |
-| ------------------ | --------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `RecordingPill`    | Left screen edge, ~4/5 down; dragged to any edge, or floating         | Always. Buttons per session state (start; screenshot, clip, end; log, done). Menu: the same, mode, Settings, Quit |
-| `LoggingOverlay`   | Next to where the user writes (`docs/internals/overlay-placement.md`) | When a session ends                                                                                               |
-| `ExpandedView`     | Overlay                                                               | Opened from the pill: past sessions                                                                               |
-| `ScreenshotFlight` | Over the whole main display (`docs/internals/screenshot-flight.md`)   | While a ⌃⇧C screenshot flies into the pill                                                                        |
-| Settings           | The only normal window                                                | Opened from the pill menu                                                                                         |
+| Window             | Where                                                                 | Shows                                                                                                                                     |
+| ------------------ | --------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `RecordingPill`    | Left screen edge, ~4/5 down; dragged to any edge, or floating         | Always. Past sessions, then per session state: start; screenshot, end; log, done. Menu: the session's actions, clip, mode, Settings, Quit |
+| `LoggingOverlay`   | Next to where the user writes (`docs/internals/overlay-placement.md`) | When a session ends                                                                                                                       |
+| `ExpandedView`     | Overlay                                                               | Opened from the pill: past sessions                                                                                                       |
+| `ScreenshotFlight` | Over the whole main display (`docs/internals/screenshot-flight.md`)   | While a ⌃⇧C screenshot flies into the pill                                                                                                |
+| Settings           | The only normal window                                                | Opened from the pill menu                                                                                                                 |
 
 The UI reaches main only through `KladdRpcs` over MessagePorts (`docs/internals/rpc-over-messageports.md`); the pill menu is the other entry point. OS work runs in the Swift helper `kladd-capture`, one process per call, so macOS attributes its permissions to Kladd. Dependencies point inward, `apps → infra/platform → core → domain`, and each package's `AGENTS.md` says what belongs there and which file to copy:
 

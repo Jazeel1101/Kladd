@@ -266,10 +266,10 @@ export const renderOverview = (input: OverviewInput): string => {
       ? [
           `- \`${f.timeline}\`: every event, one JSON object per line, with \`type\` start, stop, focus, frame, idle, active or activity (key and click counts every 10 s, never what was typed). Lines can be out of \`t\` order; sort by \`t\`.`,
           `- \`${f.frames}/<t>.jpg\`: keyframes (6-digit \`t\`, e.g. ${frameName(65)}.jpg is t=65); \`${f.frames}/<t>.txt\` is its OCR text, missing when OCR failed. \`${f.focus}/<t>.json\`: the focused window at that keyframe.`,
-          `- Use \`jq\` and \`grep\` on the \`.jsonl\` files, e.g. \`jq -c 'select(.type=="focus")' ${f.timeline}\`. There is no Python.`,
+          `- Search the \`.jsonl\` files for what you need, such as \`"type":"focus"\` in \`${f.timeline}\`, rather than reading them whole.`,
         ]
       : [
-          `- Use \`jq\` and \`grep\` on the JSON files, e.g. \`jq -c '.focus.app' ${f.screenshots}/*.json\`. There is no Python.`,
+          `- Search the JSON files for what you need, such as \`"app"\` in \`${f.screenshots}/*.json\`, rather than reading them all.`,
         ]),
     "",
     "## Screenshots",

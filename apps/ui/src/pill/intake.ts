@@ -81,7 +81,7 @@ export const panelFromWall = (frame: NotchFrame & { readonly wall: Wall }) => {
   const depth = 300;
   const length = 260;
   const r = pill.radius;
-  const mid = frame.along + pill.height / 2;
+  const mid = frame.along + frame.length / 2;
   const top = Math.min(Math.max(mid - length / 2, edgeRoom), canvas.width - edgeRoom - length);
   const far = canvas.width - depth;
   const flat = { x: 0, y: top, width: depth, height: length };
