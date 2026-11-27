@@ -72,7 +72,7 @@ describe("deniedToolUse", () => {
 });
 
 describe("claudeOptions", () => {
-  const options = claudeOptions(scope, "/opt/homebrew/bin/claude", {});
+  const options = claudeOptions(scope, "/opt/homebrew/bin/claude", {}, {});
 
   it("runs the student's claude in the session folder without their settings", () => {
     assert.strictEqual(options.pathToClaudeCodeExecutable, "/opt/homebrew/bin/claude");
@@ -101,5 +101,17 @@ describe("claudeOptions", () => {
     assert.strictEqual(options.env?.["DISABLE_TELEMETRY"], "1");
     assert.strictEqual(options.env?.["CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC"], "1");
     assert.isUndefined(options.env?.["ANTHROPIC_API_KEY"]);
+  });
+
+  it("reaches the model through the student's own proxy or key, which can't replace HOME", () => {
+    const env = claudeOptions(
+      scope,
+      "/opt/homebrew/bin/claude",
+      { ANTHROPIC_BASE_URL: "https://proxy.example", ANTHROPIC_AUTH_TOKEN: "token" },
+      {},
+    ).env;
+    assert.strictEqual(env?.["ANTHROPIC_BASE_URL"], "https://proxy.example");
+    assert.strictEqual(env?.["ANTHROPIC_AUTH_TOKEN"], "token");
+    assert.strictEqual(env?.["HOME"], scope.home);
   });
 });

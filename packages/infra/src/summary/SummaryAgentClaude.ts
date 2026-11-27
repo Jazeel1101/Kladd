@@ -63,6 +63,21 @@ const ToolInput = Schema.Struct({
 });
 const decodeToolInput = Schema.decodeUnknownOption(ToolInput);
 
+/**
+ * How the student's own Claude Code reaches its model when not through its keychain login: the
+ * `env` keys of `~/.claude/settings.json` that set a proxy, key or token, and none of the rest.
+ */
+const ClaudeConnection = Schema.Struct({
+  ANTHROPIC_BASE_URL: Schema.optional(Schema.String),
+  ANTHROPIC_AUTH_TOKEN: Schema.optional(Schema.String),
+  ANTHROPIC_API_KEY: Schema.optional(Schema.String),
+  ANTHROPIC_CUSTOM_HEADERS: Schema.optional(Schema.String),
+});
+export type ClaudeConnection = typeof ClaudeConnection.Type;
+const decodeClaudeSettings = Schema.decodeUnknownOption(
+  Schema.fromJsonString(Schema.Struct({ env: Schema.optional(ClaudeConnection) })),
+);
+
 const inside = (dir: string, file: string) => file === dir || file.startsWith(`${dir}/`);
 
 /**
@@ -112,13 +127,14 @@ export const deniedToolUse = (
 };
 
 /**
- * Claude Code's options for one summary: the student's own `claude` and login, none of their
- * settings, and nothing to reach but the session's data folder and Anthropic's API.
+ * Claude Code's options for one summary: the student's own `claude`, login and connection, none of
+ * their other settings, and nothing to reach but the session's data folder and their model's API.
  * docs/internals/summary-agent.md says why each is set.
  */
 export const claudeOptions = (
   scope: SummaryScope,
   claude: string,
+  connection: ClaudeConnection,
   extra: Pick<Options, "mcpServers" | "hooks" | "abortController">,
 ): Options => {
   const summary = `${scope.sessionDir}/${sessionFiles.summary}`;
@@ -161,6 +177,7 @@ export const claudeOptions = (
     },
     // Replaces the environment: nothing of Kladd's or the student's shell reaches the agent.
     env: {
+      ...connection,
       HOME: scope.home,
       USER: scope.user,
       LOGNAME: scope.user,
@@ -233,6 +250,15 @@ export const SummaryAgentClaude = Layer.effect(
     const summarize = Effect.fn("SummaryAgentClaude.summarize")(function* (folder: string) {
       const { home, user } = yield* account;
       const claude = yield* findClaude(home);
+      // Without the file, or with one Kladd can't read, Claude Code falls back to its keychain login.
+      const connection = Option.match(
+        decodeClaudeSettings(
+          yield* fs
+            .readFileString(path.join(home, ".claude", "settings.json"))
+            .pipe(Effect.orElseSucceed(() => "")),
+        ),
+        { onNone: () => ({}), onSome: (settings) => settings.env ?? {} },
+      );
       const scope: SummaryScope = { dataDir, sessionDir: folder, home, user };
       const check: HookCallback = (input) => {
         const reason =
@@ -269,7 +295,7 @@ export const SummaryAgentClaude = Layer.effect(
             Effect.ignore,
           ),
       );
-      const options = claudeOptions(scope, claude, {
+      const options = claudeOptions(scope, claude, connection, {
         abortController,
         mcpServers: { kladd: createSdkMcpServer({ name: "kladd", tools: [frameAt(folder)] }) },
         hooks: { PreToolUse: [{ hooks: [check] }] },
