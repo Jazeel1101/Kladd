@@ -122,13 +122,14 @@ describe("claudeOptions", () => {
 });
 
 describe("connectionFrom", () => {
-  it("takes only how to reach the model from the settings, numbers as Claude Code reads them", () => {
+  it("takes only how to reach the model from the settings, each key on its own and numbers as Claude Code reads them", () => {
     assert.deepStrictEqual(
       connectionFrom(
         JSON.stringify({
           env: {
             ANTHROPIC_BASE_URL: "https://proxy.example",
             ANTHROPIC_AUTH_TOKEN: 12345,
+            ANTHROPIC_CUSTOM_HEADERS: null,
             NODE_OPTIONS: "--require /tmp/x.js",
           },
           hooks: { Stop: [] },

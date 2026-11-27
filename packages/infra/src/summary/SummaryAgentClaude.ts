@@ -66,32 +66,36 @@ const decodeToolInput = Schema.decodeUnknownOption(ToolInput);
 /**
  * How the student's own Claude Code reaches its model when not through its keychain login: the
  * `env` keys of `~/.claude/settings.json` that set a proxy, key or token, and none of the rest.
- * Claude Code takes a number there too, so a numeric token doesn't drop the proxy with it.
  */
-const ConnectionValue = Schema.Union([Schema.String, Schema.Finite]);
+const connectionKeys = [
+  "ANTHROPIC_BASE_URL",
+  "ANTHROPIC_AUTH_TOKEN",
+  "ANTHROPIC_API_KEY",
+  "ANTHROPIC_CUSTOM_HEADERS",
+] as const;
 const decodeClaudeSettings = Schema.decodeUnknownOption(
   Schema.fromJsonString(
-    Schema.Struct({
-      env: Schema.optional(
-        Schema.Struct({
-          ANTHROPIC_BASE_URL: Schema.optional(ConnectionValue),
-          ANTHROPIC_AUTH_TOKEN: Schema.optional(ConnectionValue),
-          ANTHROPIC_API_KEY: Schema.optional(ConnectionValue),
-          ANTHROPIC_CUSTOM_HEADERS: Schema.optional(ConnectionValue),
-        }),
-      ),
-    }),
+    Schema.Struct({ env: Schema.optional(Schema.Record(Schema.String, Schema.Unknown)) }),
   ),
 );
 export type ClaudeConnection = Readonly<Record<string, string>>;
 
-/** The connection in the text of the student's settings file; none when Kladd can't read it. */
-export const connectionFrom = (settings: string): ClaudeConnection =>
-  Option.match(decodeClaudeSettings(settings), {
-    onNone: () => ({}),
-    onSome: ({ env }) =>
-      Object.fromEntries(Object.entries(env ?? {}).map(([key, value]) => [key, String(value)])),
-  });
+/**
+ * The connection in the text of the student's settings file; none when Kladd can't read it. Each
+ * key on its own, so one Claude Code ignores can't drop the others, and numbers as Claude Code
+ * reads them.
+ */
+export const connectionFrom = (settings: string): ClaudeConnection => {
+  const env = Option.getOrUndefined(decodeClaudeSettings(settings))?.env ?? {};
+  return Object.fromEntries(
+    connectionKeys.flatMap((key) => {
+      const value = env[key];
+      return typeof value === "string" || (typeof value === "number" && Number.isFinite(value))
+        ? [[key, String(value)]]
+        : [];
+    }),
+  );
+};
 
 const inside = (dir: string, file: string) => file === dir || file.startsWith(`${dir}/`);
 
