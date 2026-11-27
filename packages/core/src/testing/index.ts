@@ -4,23 +4,25 @@
  */
 import {
   type AccessibilityPermission,
+  type CaptureMode,
   type ClipInfo,
   clipName,
   clipsFolder,
   FocusTrackingFailed,
   type ScreenCaptureFailed,
-  type SessionInfo,
+  type ScreenshotInfo,
   type TranscriptionFailed,
-  RecordingSessionId,
   ScreenCapturePermissionDenied,
   ScreenshotId,
   type ScreenCapturePermission,
+  type Session,
+  SessionId,
   emptyFocus,
   makeAppAdapter,
+  sessionInfo,
   type AppAdapter,
   type FocusSnapshot,
   type Rect,
-  type RecordingSession,
   type WindowKind,
 } from "@kladd/domain";
 import { Context, Effect, Layer, Option, Ref, Stream } from "effect";
@@ -29,10 +31,9 @@ import { ClipCapture } from "../ports/ClipCapture";
 import { FocusTracker } from "../ports/FocusTracker";
 import { Ids } from "../ports/Ids";
 import { OverlayWindows } from "../ports/OverlayWindows";
-import { RecordingStore } from "../ports/RecordingStore";
 import { ScreenCapture } from "../ports/ScreenCapture";
-import { ScreenshotFiles } from "../ports/ScreenshotFiles";
 import { SessionCapture } from "../ports/SessionCapture";
+import { SessionStore } from "../ports/SessionStore";
 import { Transcriber } from "../ports/Transcriber";
 
 const screenCaptureTest = (
@@ -91,12 +92,16 @@ export const ClipCaptureTest = (
 /** What SessionCaptureTest saw. Read it with `yield* SessionCaptureLog` in a test. */
 export class SessionCaptureLog extends Context.Service<
   SessionCaptureLog,
-  Ref.Ref<{ readonly started: ReadonlyArray<string>; readonly stopped: number }>
+  Ref.Ref<{
+    readonly started: ReadonlyArray<string>;
+    readonly modes: ReadonlyArray<CaptureMode>;
+    readonly stopped: number;
+  }>
 >()("kladd/core/testing/SessionCaptureLog") {}
 
 /**
- * Starts and stops at once and writes nothing; logs the folders it started in, and stops, in
- * SessionCaptureLog. Given a `start` or `stop` failure, that step fails with it.
+ * Starts and stops at once and writes nothing; logs the folders and modes it started in, and
+ * stops, in SessionCaptureLog. Given a `start` or `stop` failure, that step fails with it.
  */
 export const SessionCaptureTest = (
   fail: {
@@ -106,20 +111,23 @@ export const SessionCaptureTest = (
 ) =>
   Layer.unwrap(
     Effect.gen(function* () {
-      const log = yield* Ref.make<{ started: ReadonlyArray<string>; stopped: number }>({
-        started: [],
-        stopped: 0,
-      });
+      const log = yield* Ref.make<{
+        started: ReadonlyArray<string>;
+        modes: ReadonlyArray<CaptureMode>;
+        stopped: number;
+      }>({ started: [], modes: [], stopped: 0 });
       const stop = Ref.update(log, (l) => ({ ...l, stopped: l.stopped + 1 })).pipe(
         Effect.andThen(fail.stop ? Effect.fail(fail.stop) : Effect.void),
       );
       const capture = SessionCapture.of({
-        start: (dir) =>
+        start: (dir, mode) =>
           fail.start
             ? Effect.fail(fail.start)
-            : Ref.update(log, (l) => ({ ...l, started: [...l.started, dir] })).pipe(
-                Effect.as({ stop }),
-              ),
+            : Ref.update(log, (l) => ({
+                ...l,
+                started: [...l.started, dir],
+                modes: [...l.modes, mode],
+              })).pipe(Effect.as({ stop })),
       });
       return Layer.mergeAll(
         Layer.succeed(SessionCapture, capture),
@@ -162,93 +170,113 @@ export const TranscriberTest = (language: string | TranscriptionFailed = "no") =
   );
 
 /**
- * In-memory store. Starts empty. Folders are `/recordings/<id>`, clips `/recordings/<id>/clips/001`,
- * with no sound and no live files; RecordingStoreFile's tests cover reading real ones.
+ * In-memory store. Starts empty, or with `sessions`, oldest first, and their `screenshots`. Folders are `/sessions/<id>`,
+ * clips `/sessions/<id>/clips/001`, screenshots `/sessions/<id>/screenshots/<id>.png`, with no sound
+ * and no live files; SessionStoreFile's tests cover reading real ones.
  */
-export const RecordingStoreTest = Layer.effect(
-  RecordingStore,
-  Effect.gen(function* () {
-    const ref = yield* Ref.make(Option.none<RecordingSession>());
-    const infos = yield* Ref.make(new Map<string, SessionInfo>());
-    const overviews = yield* Ref.make(new Set<string>());
-    const clips = yield* Ref.make(new Map<string, ClipInfo>());
-    const folderOf = (id: string) => `/recordings/${id}`;
-    const info = (folder: string) =>
-      Ref.get(infos).pipe(
-        Effect.flatMap((all) => Effect.fromNullishOr(all.get(folder))),
-        Effect.orDie,
+export const SessionStoreTest = (
+  sessions: ReadonlyArray<Session> = [],
+  screenshots: ReadonlyArray<ScreenshotInfo> = [],
+) =>
+  Layer.effect(
+    SessionStore,
+    Effect.gen(function* () {
+      const folderOf = (id: string) => `/sessions/${id}`;
+      const all = yield* Ref.make(
+        new Map<string, Session>(sessions.map((session) => [folderOf(session.id), session])),
       );
-    return RecordingStore.of({
-      active: Ref.get(ref),
-      save: Effect.fn("RecordingStoreTest.save")(function* (session: RecordingSession) {
-        const folder = folderOf(session.id);
-        const created: SessionInfo = {
-          id: session.id,
-          startedAt: session.startedAt,
-          stoppedAt: null,
-          appVersion: "0.0.0-test",
-          layout: 1,
-        };
-        yield* Ref.update(infos, (all) => new Map(all).set(folder, created));
-        yield* Ref.set(ref, Option.some(session));
-        return folder;
-      }),
-      clear: Ref.set(ref, Option.none()),
-      unfinished: Effect.gen(function* () {
-        const written = yield* Ref.get(overviews);
-        return [...(yield* Ref.get(infos)).keys()].filter((folder) => !written.has(folder));
-      }),
-      folder: (id) =>
-        Ref.get(infos).pipe(
-          Effect.map((all) => Option.some(folderOf(id)).pipe(Option.filter((f) => all.has(f)))),
+      const overviews = yield* Ref.make(new Set<string>());
+      const clips = yield* Ref.make(new Map<string, ClipInfo>());
+      const shots = yield* Ref.make(
+        new Map<string, ReadonlyArray<ScreenshotInfo>>(
+          sessions.map((session) => [
+            folderOf(session.id),
+            screenshots.filter((shot) => shot.session === session.id),
+          ]),
         ),
-      updateInfo: (folder, update) =>
-        Effect.flatMap(info(folder), (current) =>
-          Ref.update(infos, (all) => new Map(all).set(folder, update(current))),
+      );
+      const session = (folder: string) =>
+        Ref.get(all).pipe(
+          Effect.flatMap((saved) => Effect.fromNullishOr(saved.get(folder))),
+          Effect.orDie,
+        );
+      const set = (folder: string, saved: Session) =>
+        Ref.update(all, (now) => new Map(now).set(folder, saved));
+      const inFolder = (folder: string) => (path: string) => path.startsWith(`${folder}/`);
+      return SessionStore.of({
+        list: Ref.get(all).pipe(
+          Effect.map((saved) =>
+            [...saved].map(([folder, session]) => ({ folder, session })).toReversed(),
+          ),
         ),
-      createClip: (folder, created) =>
-        Ref.modify(clips, (all) => {
-          const inFolder = [...all.keys()].filter((clip) => clip.startsWith(`${folder}/`));
-          const clip = `${folder}/${clipsFolder}/${clipName(inFolder.length + 1)}`;
-          return [clip, new Map(all).set(clip, created)];
-        }),
-      removeClip: (clip) =>
-        Ref.update(clips, (all) => {
-          const left = new Map(all);
-          left.delete(clip);
-          return left;
-        }),
-      updateClip: (clip, update) =>
-        Ref.update(clips, (all) => {
-          const current = all.get(clip);
-          return current === undefined ? all : new Map(all).set(clip, update(current));
-        }),
-      untranscribed: () => Effect.succeed([]),
-      read: (folder) =>
-        Effect.all({ session: info(folder), all: Ref.get(clips) }).pipe(
-          Effect.map(({ session, all }) => ({
-            session,
-            events: [],
-            files: [],
-            clips: [...all]
-              .filter(([clip]) => clip.startsWith(`${folder}/`))
-              .map(([clip, clipInfo]) => ({
-                name: clip.slice(clip.lastIndexOf("/") + 1),
-                info: clipInfo,
-                sound: false,
-                segments: null,
-                marks: 0,
-              })),
-          })),
-        ),
-      writeOverview: (folder) => Ref.update(overviews, (all) => new Set(all).add(folder)),
-    });
-  }),
-);
+        create: (created) => {
+          const folder = folderOf(created.id);
+          return Effect.as(set(folder, created), folder);
+        },
+        update: set,
+        remove: (folder) =>
+          Ref.update(all, (now) => {
+            const left = new Map(now);
+            left.delete(folder);
+            return left;
+          }),
+        folder: (id) =>
+          Ref.get(all).pipe(
+            Effect.map((saved) =>
+              Option.some(folderOf(id)).pipe(Option.filter((f) => saved.has(f))),
+            ),
+          ),
+        finished: (folder) => Effect.map(Ref.get(overviews), (written) => written.has(folder)),
+        screenshotFile: (folder, id) => Effect.succeed(`${folder}/screenshots/${id}.png`),
+        saveScreenshot: (folder, info) =>
+          Ref.update(shots, (now) => new Map(now).set(folder, [...(now.get(folder) ?? []), info])),
+        screenshots: (folder) => Effect.map(Ref.get(shots), (now) => now.get(folder) ?? []),
+        createClip: (folder, created) =>
+          Ref.modify(clips, (now) => {
+            const clip = `${folder}/${clipsFolder}/${clipName([...now.keys()].filter(inFolder(folder)).length + 1)}`;
+            return [clip, new Map(now).set(clip, created)];
+          }),
+        removeClip: (clip) =>
+          Ref.update(clips, (now) => {
+            const left = new Map(now);
+            left.delete(clip);
+            return left;
+          }),
+        updateClip: (clip, update) =>
+          Ref.update(clips, (now) => {
+            const current = now.get(clip);
+            return current === undefined ? now : new Map(now).set(clip, update(current));
+          }),
+        untranscribed: () => Effect.succeed([]),
+        read: (folder) =>
+          Effect.all({
+            saved: session(folder),
+            allClips: Ref.get(clips),
+            allShots: Ref.get(shots),
+          }).pipe(
+            Effect.map(({ saved, allClips, allShots }) => ({
+              session: sessionInfo(saved, "0.0.0-test"),
+              events: [],
+              screenshots: allShots.get(folder) ?? [],
+              clips: [...allClips]
+                .filter(([clip]) => inFolder(folder)(clip))
+                .map(([clip, info]) => ({
+                  name: clip.slice(clip.lastIndexOf("/") + 1),
+                  info,
+                  sound: false,
+                  segments: null,
+                  marks: 0,
+                })),
+            })),
+          ),
+        writeOverview: (folder) => Ref.update(overviews, (written) => new Set(written).add(folder)),
+      });
+    }),
+  );
 
 /**
- * Recording sessions are "session-1", "session-2", ...; screenshots are UUIDs ending in their
- * number: "00000000-0000-7000-8000-000000000001", ...
+ * Sessions are "session-1", "session-2", ...; screenshots are UUIDs ending in their number:
+ * "00000000-0000-7000-8000-000000000001", ...
  */
 export const IdsTest = Layer.effect(
   Ids,
@@ -256,8 +284,8 @@ export const IdsTest = Layer.effect(
     const sessions = yield* Ref.make(0);
     const screenshots = yield* Ref.make(0);
     return Ids.of({
-      recordingSessionId: Ref.updateAndGet(sessions, (n) => n + 1).pipe(
-        Effect.map((n) => RecordingSessionId.make(`session-${n}`)),
+      sessionId: Ref.updateAndGet(sessions, (n) => n + 1).pipe(
+        Effect.map((n) => SessionId.make(`session-${n}`)),
       ),
       screenshotId: Ref.updateAndGet(screenshots, (n) => n + 1).pipe(
         Effect.map((n) =>
@@ -266,12 +294,6 @@ export const IdsTest = Layer.effect(
       ),
     });
   }),
-);
-
-/** Screenshots go to /screenshots/<id>.png. */
-export const ScreenshotFilesTest = Layer.succeed(
-  ScreenshotFiles,
-  ScreenshotFiles.of({ file: (id) => Effect.succeed(`/screenshots/${id}.png`) }),
 );
 
 /** What FocusTrackerTest saw. Read it with `yield* FocusTrackerLog` in a test. */

@@ -1,4 +1,4 @@
-import type { RecordingSessionId, ScreenshotId } from "@kladd/domain";
+import type { ScreenshotId, SessionId } from "@kladd/domain";
 import { Context, type Effect } from "effect";
 
 /**
@@ -8,7 +8,7 @@ import { Context, type Effect } from "effect";
 export class Ids extends Context.Service<
   Ids,
   {
-    readonly recordingSessionId: Effect.Effect<RecordingSessionId>;
+    readonly sessionId: Effect.Effect<SessionId>;
     readonly screenshotId: Effect.Effect<ScreenshotId>;
   }
 >()("kladd/core/Ids") {}

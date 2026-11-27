@@ -133,7 +133,7 @@ export const ScreenshotFlight = () => {
     let stop = () => {};
     let cancelled = false;
     c.style.visibility = "hidden";
-    img.src = screenshotUrl(id);
+    img.src = screenshotUrl(flight.screenshot);
     // Decoded, then painted once before the clock starts: the GPU upload of the full-resolution
     // image happens in that first frame instead of eating the start of the animation.
     img.decode().then(

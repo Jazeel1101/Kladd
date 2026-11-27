@@ -1,5 +1,5 @@
 import { Ids } from "@kladd/core";
-import { RecordingSessionId, ScreenshotId } from "@kladd/domain";
+import { ScreenshotId, SessionId } from "@kladd/domain";
 import { Effect, Layer } from "effect";
 import { SecureRandom } from "effect/crypto";
 
@@ -7,7 +7,7 @@ import { SecureRandom } from "effect/crypto";
 export const IdsLive = Layer.succeed(
   Ids,
   Ids.of({
-    recordingSessionId: Effect.sync(() => RecordingSessionId.make(SecureRandom.uuidV7Unsafe())),
+    sessionId: Effect.sync(() => SessionId.make(SecureRandom.uuidV7Unsafe())),
     screenshotId: Effect.sync(() => ScreenshotId.make(SecureRandom.uuidV7Unsafe())),
   }),
 );

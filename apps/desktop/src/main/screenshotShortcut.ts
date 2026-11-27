@@ -2,7 +2,7 @@ import { OverlayWindows, Screenshots } from "@kladd/core";
 import { Effect, Layer } from "effect";
 import { captureErrorMessage, registerShortcut } from "./globalShortcut";
 
-/** ⌃⇧C anywhere: screenshot the whole screen and fly it into the logging overlay. */
+/** ⌃⇧C anywhere during a session: screenshot the whole screen into it and fly it into the pill. */
 export const ScreenshotShortcutLive = Layer.effectDiscard(
   Effect.gen(function* () {
     const screenshots = yield* Screenshots;

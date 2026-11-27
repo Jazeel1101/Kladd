@@ -1,9 +1,9 @@
 import { assert, describe, it } from "@effect/vitest";
 import { DateTime } from "effect";
-import { RecordingSessionId } from "./RecordingSession";
+import { SessionId } from "./Session";
 import { isSessionFolderOf, sessionFolderName } from "./SessionFolderName";
 
-const id = RecordingSessionId.make("019a-abc");
+const id = SessionId.make("019a-abc");
 
 describe("sessionFolderName", () => {
   it("names the folder after the local start time and the id", () => {

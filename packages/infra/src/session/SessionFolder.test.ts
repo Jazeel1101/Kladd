@@ -3,8 +3,9 @@ import {
   ClipCapture,
   Clips,
   LoggingOverlay,
-  RecordingStore,
-  Recordings,
+  Screenshots,
+  SessionStore,
+  Sessions,
   Transcriber,
 } from "@kladd/core";
 import {
@@ -19,10 +20,11 @@ import {
   TranscriberTest,
 } from "@kladd/core/testing";
 import {
-  RecordingSession,
-  RecordingSessionId,
+  Session,
+  SessionId,
   TranscriptionFailed,
   renderOverview,
+  sessionState,
 } from "@kladd/domain";
 import { assert, describe, it } from "@effect/vitest";
 import {
@@ -37,7 +39,7 @@ import {
   Schedule,
 } from "effect";
 import { StorageConfig } from "../StorageConfig";
-import { RecordingStoreFile } from "./RecordingStoreFile";
+import { SessionStoreFile } from "./SessionStoreFile";
 
 type TranscriberLayer = Layer.Layer<Transcriber | TranscriberLog, never, FileSystem.FileSystem>;
 
@@ -70,16 +72,19 @@ const clipCapture = Layer.unwrap(
   }),
 );
 
-/** Recordings and Clips with the real file store in `dataDir`: what Kladd writes into a session folder. */
+/**
+ * Sessions, Clips and Screenshots with the real file store in `dataDir`: what Kladd writes into a
+ * session folder.
+ */
 const kladdIn = (dataDir: string, transcriber: TranscriberLayer = TranscriberTest()) =>
-  Recordings.layer.pipe(
+  Sessions.layer.pipe(
     Layer.provide(LoggingOverlay.layer),
+    Layer.provideMerge(Layer.mergeAll(Clips.layer, Screenshots.layer)),
     Layer.provide([ScreenCaptureTest.granted, IdsTest, FocusTrackerTest(), AppAdaptersTest()]),
-    Layer.provideMerge(Clips.layer),
     Layer.provideMerge(
       Layer.mergeAll(SessionCaptureTest(), clipCapture, transcriber, OverlayWindowsTest),
     ),
-    Layer.provideMerge(RecordingStoreFile),
+    Layer.provideMerge(SessionStoreFile),
     Layer.provide(Layer.succeed(StorageConfig, StorageConfig.of({ dataDir, appVersion: "1.2.3" }))),
   );
 
@@ -132,19 +137,26 @@ const startedAt = DateTime.makeUnsafe("2026-11-24T13:02:00Z");
 
 /**
  * A folder the last launch saved, with one clip that recorded sound, then quit before finishing.
- * `crashed`: the session and clip were still recording, so neither has a stop time.
+ * `crashed`: the session and clip were still recording, so neither has an end.
  */
 const leftUnfinished = Effect.fn("test.leftUnfinished")(function* (
   id: string,
   sound: boolean,
   crashed = false,
 ) {
-  const store = yield* RecordingStore;
+  const store = yield* SessionStore;
   const fs = yield* FileSystem.FileSystem;
-  const folder = yield* store.save(
-    new RecordingSession({ id: RecordingSessionId.make(id), startedAt }),
+  // Started just now, so it isn't past its end when the next launch reads it.
+  const now = yield* DateTime.now;
+  const folder = yield* store.create(
+    new Session({
+      id: SessionId.make(id),
+      mode: "manual",
+      startedAt: now,
+      endedAt: crashed ? null : now,
+      loggedAt: null,
+    }),
   );
-  if (!crashed) yield* store.clear;
   const clip = yield* store.createClip(folder, {
     startedAt,
     stoppedAt: crashed ? null : startedAt,
@@ -161,7 +173,8 @@ const transcribed = Effect.gen(function* () {
 const readJson = Effect.fn("test.readJson")(function* (file: string) {
   const fs = yield* FileSystem.FileSystem;
   return JSON.parse(yield* fs.readFileString(file)) as {
-    stoppedAt: string | null;
+    endedAt?: string | null;
+    stoppedAt?: string | null;
     language?: string | null;
   };
 });
@@ -183,16 +196,16 @@ const overviewOf = (folder: string, ok?: (text: string) => boolean) =>
     ok,
   );
 
-/** Starts a session, runs `during` in its folder, stops it, and waits for its overview. */
+/** Starts a session, runs `during` in its folder, ends it, and waits for its overview. */
 const recordOnce = Effect.fn("test.recordOnce")(function* (
-  during: (folder: string) => Effect.Effect<void, unknown, Clips> = () => Effect.void,
+  during: (folder: string) => Effect.Effect<void, unknown, Clips | Screenshots> = () => Effect.void,
 ) {
-  const recordings = yield* Recordings;
-  yield* recordings.start;
+  const sessions = yield* Sessions;
+  yield* sessions.start("manual");
   const [folder] = (yield* Ref.get(yield* SessionCaptureLog)).started;
   assert.isDefined(folder);
   yield* during(folder);
-  yield* recordings.stop;
+  yield* sessions.end;
   yield* overviewOf(folder);
   return folder;
 });
@@ -201,17 +214,51 @@ const toggle = Effect.gen(function* () {
   yield* (yield* Clips).toggle;
 });
 
+/** One screenshot. */
+const take = Effect.gen(function* () {
+  yield* (yield* Screenshots).take;
+});
+
 /** One clip, started and stopped. */
 const clip = Effect.andThen(toggle, toggle);
 
 describe("session folder", () => {
-  it.live("after stop: stoppedAt is set and overview.md is written, without clips", () =>
+  it.live("a session that ends holding nothing leaves no folder behind", () =>
     Effect.gen(function* () {
-      const store = yield* RecordingStore;
-      const folder = yield* recordOnce();
+      const fs = yield* FileSystem.FileSystem;
+      const sessions = yield* Sessions;
+      yield* sessions.start("manual");
+      const [folder] = (yield* Ref.get(yield* SessionCaptureLog)).started;
+      assert.isDefined(folder);
+      assert.isTrue(yield* fs.exists(folder));
+      yield* sessions.end;
+      assert.isFalse(yield* fs.exists(folder));
+    }).pipe(Effect.provide(kladdInTemp())),
+  );
+
+  it.live("after end: endedAt is set and overview.md is written, without clips", () =>
+    Effect.gen(function* () {
+      const store = yield* SessionStore;
+      const folder = yield* recordOnce(() => take);
       assert.strictEqual(yield* overviewOf(folder), renderOverview(yield* store.read(folder)));
-      assert.isString((yield* readJson(`${folder}/session.json`)).stoppedAt);
+      assert.isString((yield* readJson(`${folder}/session.json`)).endedAt);
       assert.deepStrictEqual(yield* transcribed, []);
+    }).pipe(Effect.provide(kladdInTemp())),
+  );
+
+  it.live("screenshots are saved in the session folder and listed in its overview", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const folder = yield* recordOnce(() => Effect.andThen(take, take));
+      const names = (yield* fs.readDirectory(`${folder}/screenshots`)).toSorted();
+      assert.deepStrictEqual(names, [
+        "00000000-0000-7000-8000-000000000001.json",
+        "00000000-0000-7000-8000-000000000002.json",
+      ]);
+      const text = yield* overviewOf(folder);
+      assert.include(text, "Manual session, started");
+      assert.include(text, "Screenshots: 2. Clips: 0.");
+      assert.include(text, "screenshots/00000000-0000-7000-8000-000000000002.png");
     }).pipe(Effect.provide(kladdInTemp())),
   );
 
@@ -238,7 +285,7 @@ describe("session folder", () => {
       ),
   );
 
-  it.live("stopping the session stops its clip, which is then transcribed with the session", () =>
+  it.live("ending the session stops its clip, which is then transcribed with the session", () =>
     Effect.gen(function* () {
       const folder = yield* recordOnce(() => toggle);
       assert.strictEqual((yield* Ref.get(yield* ClipCaptureLog)).stopped, 1);
@@ -279,7 +326,7 @@ describe("session folder", () => {
       }).pipe(Effect.provide(NodeServices.layer)),
   );
 
-  it.live("a session a crash left recording a clip is finished at launch, the clip as it is", () =>
+  it.live("a session a crash left recording a clip is resumed at launch, the clip as it is", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const dataDir = yield* fs.makeTempDirectoryScoped();
@@ -287,13 +334,18 @@ describe("session folder", () => {
         Effect.provide(kladdIn(dataDir)),
       );
       yield* Effect.gen(function* () {
-        assert.isTrue(Option.isNone(yield* (yield* Recordings).active));
+        const sessions = yield* Sessions;
+        const resumed = Option.map(yield* sessions.current, sessionState);
+        assert.deepStrictEqual(resumed, Option.some("active"));
+        assert.deepStrictEqual((yield* Ref.get(yield* SessionCaptureLog)).started, [left.folder]);
+        // Its stopped clips are transcribed once the model is ready; the cut-off one is too.
+        yield* eventually(transcribed, (all) => all.length === 1);
+        yield* sessions.end;
         assert.include(yield* overviewOf(left.folder), "No stop time for clip 001 (a crash)");
-        assert.isNull((yield* readJson(`${left.folder}/session.json`)).stoppedAt);
+        assert.isString((yield* readJson(`${left.folder}/session.json`)).endedAt);
         const info = yield* readJson(`${left.clip}/clip.json`);
         assert.isNull(info.stoppedAt);
         assert.strictEqual(info.language, "no");
-        assert.isFalse(yield* fs.exists(`${dataDir}/active-recording.json`));
       }).pipe(Effect.provide(kladdIn(dataDir)));
     }).pipe(Effect.provide(NodeServices.layer)),
   );
@@ -330,7 +382,7 @@ describe("session folder", () => {
       yield* eventually(fs.readFileString(`${folder}/clips/001/transcript.jsonl`));
 
       yield* Effect.gen(function* () {
-        assert.deepStrictEqual(yield* (yield* RecordingStore).unfinished, []);
+        assert.isTrue(yield* (yield* SessionStore).finished(folder));
         yield* Effect.sleep("100 millis");
         assert.deepStrictEqual(yield* transcribed, []);
       }).pipe(Effect.provide(kladdIn(dataDir, whisper(model, ""))));
@@ -352,14 +404,14 @@ describe("session folder", () => {
   );
 
   it.live(
-    "when the model gets ready, the active session's stopped clips are transcribed, and its overview waits for stop",
+    "when the model gets ready, the active session's stopped clips are transcribed, and its overview waits for its end",
     () =>
       Effect.gen(function* () {
         const fs = yield* FileSystem.FileSystem;
         const model = yield* Deferred.make<void>();
         yield* Effect.gen(function* () {
-          const recordings = yield* Recordings;
-          yield* recordings.start;
+          const sessions = yield* Sessions;
+          yield* sessions.start("manual");
           const [folder] = (yield* Ref.get(yield* SessionCaptureLog)).started;
           assert.isDefined(folder);
           yield* clip;
@@ -374,7 +426,7 @@ describe("session folder", () => {
           assert.deepStrictEqual(yield* transcribed, [`${first}/audio.m4a`, `${first}/audio.m4a`]);
           assert.isFalse(yield* fs.exists(`${second}/transcript.jsonl`));
           assert.isFalse(yield* fs.exists(`${folder}/overview.md`));
-          yield* recordings.stop;
+          yield* sessions.end;
           const text = yield* overviewOf(folder, (t) => !t.includes("| no | 0 |"));
           assert.include(text, "| clips/001/ | yes | 1 lines | 0 |");
           assert.include(text, "| clips/002/ | yes | 1 lines | 0 |");

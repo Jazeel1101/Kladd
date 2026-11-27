@@ -7,9 +7,10 @@
 //   kladd-capture screenshot --out <file.png> [--exclude-pid pid]
 //   kladd-capture record --out <file.mov> [--exclude-pid pid]
 //       prints "recording" once frames are written; stops on SIGINT, SIGTERM or stdin closing.
-//   kladd-capture session --dir <folder> [--exclude-pid pid] [--exclude-apps json]
-//       writes a session folder's live files (Session.swift); prints and stops like record. It also
-//       records clips (Clip.swift) and takes screenshots, as the only ScreenCaptureKit user then, on stdin lines:
+//   kladd-capture session --dir <folder> --mode manual|auto [--exclude-pid pid] [--exclude-apps json]
+//       a work session's capture (Session.swift); prints and stops like record. In auto mode it writes the
+//       session folder's live files. It records clips (Clip.swift) and takes screenshots, as the only
+//       ScreenCaptureKit user then, on stdin lines:
 //         clip-start <clip folder>   answers "clip-recording" at the first frame, then one of the two below
 //         clip-stop                  answers "clip-stopped" once the files are done, or
 //                                    "clip-failed <reason>" (also instead of "clip-recording")
@@ -309,7 +310,7 @@ Task { @MainActor in
   default:
     fail(
       "usage: kladd-capture status | request --app <path> | screenshot --out <file> | record --out <file>"
-        + " | session --dir <folder>"
+        + " | session --dir <folder> --mode manual|auto"
         + " | accessibility-status | accessibility-request --app <path> | focus [--exclude-pid pid]"
         + " | watch-focus [--exclude-pid pid]",
       code: exitUsage)

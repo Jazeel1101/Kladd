@@ -1,6 +1,7 @@
-// `kladd-capture session`: writes the live files of a session folder (opptaksmappe) until SIGINT,
-// SIGTERM or stdin closing, and records clips (Clip.swift) on the commands it reads from stdin.
-// File names and line shapes are the contract in packages/domain/src/SessionFolder.ts;
+// `kladd-capture session`: the capture of a work session (økt) until SIGINT, SIGTERM or stdin
+// closing. It records clips (Clip.swift) and takes screenshots on the commands it reads from stdin,
+// and in auto mode writes the live files of the session folder (opptaksmappe) too. File names and
+// line shapes are the contract in packages/domain/src/SessionFolder.ts;
 // docs/internals/session-capture.md has the why, main.swift the commands and answers.
 //
 // `t` is seconds since the `start` event. Every part is best effort: a part that fails logs to
@@ -113,7 +114,9 @@ func secureFieldFocused(_ app: NSRunningApplication) -> Bool {
   let privacy: PrivacyFilter
   var excludePid: pid_t? { privacy.excludePid }
   var excludedApps: Set<String> { privacy.excludedApps }
-  let timeline: LineWriter
+  /// Auto mode: keyframes, focus, input counts and the timeline. Manual mode writes none of them.
+  let auto: Bool
+  let timeline: LineWriter?
   let accessibility = AXIsProcessTrusted()
   var timer: Timer?
 
@@ -138,9 +141,14 @@ func secureFieldFocused(_ app: NSRunningApplication) -> Bool {
   let ocrQueue = DispatchQueue(label: "kladd.session.ocr", qos: .utility)
   let ocrJobs = DispatchGroup()
 
-  init(dir: URL, privacy: PrivacyFilter) {
+  init(dir: URL, privacy: PrivacyFilter, auto: Bool) {
     self.dir = dir
     self.privacy = privacy
+    self.auto = auto
+    guard auto else {
+      timeline = nil
+      return
+    }
     for sub in ["frames", "focus"] {
       try? FileManager.default.createDirectory(at: dir.appendingPathComponent(sub), withIntermediateDirectories: true)
     }
@@ -160,7 +168,7 @@ func secureFieldFocused(_ app: NSRunningApplication) -> Bool {
     do { try await privacy.load() } catch { logError("no keyframes for now: \(error)") }
     privacy.watchLaunches()
     start = hostNow()
-    timeline.write([
+    timeline?.write([
       "type": "start", "t": 0, "at": iso(Date()), "accessibility": accessibility,
     ])
     say("recording")
@@ -223,7 +231,7 @@ func secureFieldFocused(_ app: NSRunningApplication) -> Bool {
     timer?.invalidate()
     focusFrame?.cancel()
     let end = hostNow()
-    timeline.write(["type": "stop", "t": seconds(t(end)), "at": iso(Date())])
+    timeline?.write(["type": "stop", "t": seconds(t(end)), "at": iso(Date())])
 
     let done = DispatchGroup()
     if let clip {
@@ -247,9 +255,11 @@ func secureFieldFocused(_ app: NSRunningApplication) -> Bool {
       &+ CGEventSource.counterForEventType(.combinedSessionState, eventType: .rightMouseDown)
   }
 
+  /// Manual mode keeps only the privacy filter current, for clips and screenshots.
   func tick() {
     ticks += 1
     privacy.check()
+    guard auto else { return }
     trackFocus()
     trackInput()
     if ticks % changeCheckEvery == 0 { checkScreenChange() }
@@ -264,7 +274,7 @@ func secureFieldFocused(_ app: NSRunningApplication) -> Bool {
     let key = [bundleId, name, title ?? ""]
     guard key != lastFocus else { return }
     lastFocus = key
-    timeline.write(["type": "focus", "t": seconds(t()), "app": name, "bundleId": bundleId, "title": title ?? NSNull()])
+    timeline?.write(["type": "focus", "t": seconds(t()), "app": name, "bundleId": bundleId, "title": title ?? NSNull()])
     // Without Accessibility, keyframes come from screen changes only.
     guard accessibility else { return }
     focusFrame?.cancel()
@@ -278,17 +288,17 @@ func secureFieldFocused(_ app: NSRunningApplication) -> Bool {
     let now = t()
     if !idle, since >= idleAfter {
       idle = true
-      timeline.write(["type": "idle", "t": seconds(now)])
+      timeline?.write(["type": "idle", "t": seconds(now)])
     } else if idle, since < idleAfter {
       idle = false
-      timeline.write(["type": "active", "t": seconds(max(0, now - since))])
+      timeline?.write(["type": "active", "t": seconds(max(0, now - since))])
       keys = CGEventSource.counterForEventType(.combinedSessionState, eventType: .keyDown)
       clicks = clickCount()
     }
     guard !idle, ticks % activityEvery == 0 else { return }
     let newKeys = CGEventSource.counterForEventType(.combinedSessionState, eventType: .keyDown)
     let newClicks = clickCount()
-    timeline.write(["type": "activity", "t": seconds(now), "keys": newKeys &- keys, "clicks": newClicks &- clicks])
+    timeline?.write(["type": "activity", "t": seconds(now), "keys": newKeys &- keys, "clicks": newClicks &- clicks])
     keys = newKeys
     clicks = newClicks
   }
@@ -358,7 +368,7 @@ func secureFieldFocused(_ app: NSRunningApplication) -> Bool {
         try? data.write(to: dir.appendingPathComponent("focus/\(name).json"))
       }
       let txt = "frames/\(name).txt"
-      timeline.write(["type": "frame", "t": seconds(now), "file": file, "reason": reason, "ocr": txt])
+      timeline?.write(["type": "frame", "t": seconds(now), "file": file, "reason": reason, "ocr": txt])
       ocrJobs.enter()
       ocrQueue.async {
         defer { self.ocrJobs.leave() }
@@ -374,12 +384,16 @@ var session: Session?
 
 @MainActor func runSession(_ args: [String]) async {
   guard let dir = option("--dir", in: args) else { fail("session needs --dir <folder>", code: exitUsage) }
+  guard let mode = option("--mode", in: args), ["manual", "auto"].contains(mode) else {
+    fail("session needs --mode manual|auto", code: exitUsage)
+  }
   requireGranted()
   let current = Session(
     dir: URL(fileURLWithPath: dir),
     privacy: PrivacyFilter(
       excludePid: option("--exclude-pid", in: args).flatMap { pid_t($0) },
-      excludedApps: Set(stringList("--exclude-apps", in: args))))
+      excludedApps: Set(stringList("--exclude-apps", in: args))),
+    auto: mode == "auto")
   session = current
   stopOn({ current.stop() }, commands: { current.command($0) })
   await current.begin()

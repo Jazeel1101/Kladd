@@ -1,21 +1,32 @@
 import { KladdRpcs } from "@kladd/contract";
-import { LoggingOverlay, OverlayWindows, Recordings, Screenshots } from "@kladd/core";
+import { Clips, LoggingOverlay, OverlayWindows, Screenshots, Sessions } from "@kladd/core";
 import { Effect, Option, Stream } from "effect";
+import { PillActions } from "../pillActions";
 import { PillMenu } from "../pillMenu";
 
 /**
- * Maps each Rpc in @kladd/contract to a core use case. Keep handlers thin:
- * no logic here, only translation between the wire shape and core.
+ * Maps each Rpc in @kladd/contract to a core use case, or to a PillActions action, which shows its
+ * error. Keep handlers thin: no logic here, only translation between the wire shape and core.
  */
 export const RpcHandlersLive = KladdRpcs.toLayer(
   Effect.gen(function* () {
-    const recordings = yield* Recordings;
+    const sessions = yield* Sessions;
+    const clips = yield* Clips;
     const logging = yield* LoggingOverlay;
     const windows = yield* OverlayWindows;
     const screenshots = yield* Screenshots;
+    const actions = yield* PillActions;
     const pillMenu = yield* PillMenu;
     return {
-      WatchRecording: () => Stream.map(recordings.changes, Option.getOrNull),
+      WatchSession: () => Stream.map(sessions.changes, Option.getOrNull),
+      WatchPastSessions: () => sessions.past,
+      WatchClip: () => Stream.map(clips.changes, Option.getOrNull),
+      StartSession: () => actions.start,
+      EndSession: () => actions.end,
+      FinishLogging: () => actions.finishLogging,
+      TakeScreenshot: () => actions.screenshot,
+      ToggleClip: () => actions.clip,
+      OpenLoggingOverlay: () => actions.openLogging,
       WatchLoggingOverlay: () => logging.changes,
       CloseLoggingOverlay: () => logging.close,
       WatchScreenshots: () => screenshots.changes,

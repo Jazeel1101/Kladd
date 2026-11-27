@@ -78,7 +78,7 @@ describe("ScreenCaptureDarwin.screenshot", () => {
   it.effect("is taken by the running session's helper", () =>
     Effect.gen(function* () {
       const dir = yield* FakeDir;
-      const session = yield* (yield* SessionCapture).start(dir);
+      const session = yield* (yield* SessionCapture).start(dir, "manual");
       yield* (yield* ScreenCapture).screenshot(`${dir}/a shot.png`);
       yield* session.stop;
     }).pipe(
@@ -92,7 +92,7 @@ describe("ScreenCaptureDarwin.screenshot", () => {
   it.effect("fails when the session's helper never answers", () =>
     Effect.gen(function* () {
       const dir = yield* FakeDir;
-      const session = yield* (yield* SessionCapture).start(dir);
+      const session = yield* (yield* SessionCapture).start(dir, "manual");
       const taking = yield* Effect.forkChild((yield* ScreenCapture).screenshot(`${dir}/shot.png`));
       // Lets it send the command and start its timer.
       yield* Effect.yieldNow;
@@ -106,7 +106,7 @@ describe("ScreenCaptureDarwin.screenshot", () => {
   it.effect("fails when the session's helper could not take it", () =>
     Effect.gen(function* () {
       const dir = yield* FakeDir;
-      const session = yield* (yield* SessionCapture).start(dir);
+      const session = yield* (yield* SessionCapture).start(dir, "manual");
       const failure = yield* Effect.flip((yield* ScreenCapture).screenshot(`${dir}/shot.png`));
       assert.strictEqual(failure._tag, "ScreenCaptureFailed");
       yield* session.stop;
@@ -123,7 +123,7 @@ describe("SessionCaptureDarwin clips", () => {
   it.effect("give up on a session helper that stops answering, so the session can stop", () =>
     Effect.gen(function* () {
       const dir = yield* FakeDir;
-      const session = yield* (yield* SessionCapture).start(dir);
+      const session = yield* (yield* SessionCapture).start(dir, "manual");
       const starting = yield* Effect.forkChild(
         Effect.scoped((yield* ClipCapture).start(`${dir}/clip`)),
       );

@@ -1,15 +1,18 @@
 import { assert, describe, it } from "@effect/vitest";
 import { DateTime } from "effect";
 import { renderOverview, segmentsOf, type OverviewInput } from "./Overview";
-import { RecordingSessionId } from "./RecordingSession";
-import type { TimelineEvent } from "./SessionFolder";
+import { ScreenshotId } from "./Screenshot";
+import { SessionId } from "./Session";
+import type { ScreenshotInfo, TimelineEvent } from "./SessionFolder";
 
 const session: OverviewInput["session"] = {
-  id: RecordingSessionId.make("abc"),
+  id: SessionId.make("abc"),
+  mode: "auto",
   startedAt: DateTime.makeUnsafe("2026-11-24T13:02:00Z"),
-  stoppedAt: DateTime.makeUnsafe("2026-11-24T13:42:00Z"),
+  endedAt: DateTime.makeUnsafe("2026-11-24T13:42:00Z"),
+  loggedAt: null,
   appVersion: "0.1.0",
-  layout: 1,
+  layout: 2,
 };
 
 const start: TimelineEvent = {
@@ -58,6 +61,7 @@ const realistic: OverviewInput = {
     frame(1622),
     { type: "stop", t: 2400, at: "2026-11-24T13:42:00Z" },
   ],
+  screenshots: [],
   clips: [
     {
       name: "001",
@@ -121,7 +125,8 @@ describe("segmentsOf", () => {
 describe("renderOverview", () => {
   it("renders a realistic session, with its clips on the session clock", () => {
     const text = renderOverview(realistic);
-    assert.include(text, "Duration 0:40:00 (t=0–2400). Clips: 2.");
+    assert.include(text, "Automatic session, started");
+    assert.include(text, "Duration 0:40:00 (t=0–2400). Screenshots: 0. Clips: 2.");
     assert.include(
       text,
       "| 415–700 | Safari | HC-SR04 datasheet — https://cdn.example.com/HCSR04.pdf | 000416 000420 |",
@@ -157,8 +162,9 @@ describe("renderOverview", () => {
     const [clip] = realistic.clips;
     assert.isDefined(clip);
     const text = renderOverview({
-      session: { ...session, stoppedAt: null },
+      session: { ...session, endedAt: null },
       events: [{ ...start, accessibility: false }, focus(0, "Code", null)],
+      screenshots: [],
       clips: [{ ...clip, segments: null, info: { ...clip.info, stoppedAt: null } }],
     });
     assert.include(text, "Missing data:");
@@ -180,8 +186,53 @@ describe("renderOverview", () => {
     const text = renderOverview({
       session,
       events: [start, focus(0, "Code", "x"), ...frames, { type: "stop", t: 300, at: "x" }],
+      screenshots: [],
       clips: [],
     });
     assert.include(text, "000101 +4 |");
+  });
+
+  it("renders a manual session: its screenshots with focus, and no timeline or segments", () => {
+    const shot = (n: number, takenAt: string, focus: ScreenshotInfo["focus"]): ScreenshotInfo => ({
+      id: ScreenshotId.make(`00000000-0000-7000-8000-00000000000${n}`),
+      session: session.id,
+      takenAt: DateTime.makeUnsafe(takenAt),
+      display: { x: 0, y: 0, width: 1440, height: 900 },
+      focus,
+    });
+    const oneNote = {
+      app: { bundleId: "com.microsoft.onenote.mac", name: "Microsoft OneNote" },
+      window: null,
+      title: "2IT Notatblokk",
+      element: null,
+      caret: null,
+      selection: [
+        { id: "ONMUXSectionItemView", text: "Python" },
+        { id: "ONMUXPageItemView", text: "Løkker" },
+      ],
+    };
+    const text = renderOverview({
+      session: { ...session, mode: "manual" },
+      events: [],
+      screenshots: [
+        shot(1, "2026-11-24T13:05:00Z", oneNote),
+        shot(2, "2026-11-24T13:10:30Z", null),
+      ],
+      clips: [],
+    });
+    assert.include(text, "Manual session, started");
+    assert.include(text, "Duration 0:40:00 (t=0–2400). Screenshots: 2. Clips: 0.");
+    assert.include(
+      text,
+      "| 180 | screenshots/00000000-0000-7000-8000-000000000001.png | Microsoft OneNote | 2IT Notatblokk — Python — Løkker |",
+    );
+    assert.include(
+      text,
+      "| 510 | screenshots/00000000-0000-7000-8000-000000000002.png | *unknown* |  |",
+    );
+    assert.include(text, "No focus for 1 screenshot(s)");
+    assert.notInclude(text, "## Segments");
+    assert.notInclude(text, "timeline.jsonl");
+    assert.notInclude(text, "a crash");
   });
 });

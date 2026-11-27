@@ -1,11 +1,12 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { Generic, appAdapters } from "@kladd/adapters";
-import { AppAdapters, Clips, LoggingOverlay, Recordings, Screenshots } from "@kladd/core";
-import { IdsLive, RecordingStoreFile, ScreenshotFilesDir, StorageConfig } from "@kladd/infra";
+import { AppAdapters, Clips, LoggingOverlay, Screenshots, Sessions } from "@kladd/core";
+import { IdsLive, SessionStoreFile, StorageConfig } from "@kladd/infra";
 import { app } from "electron";
 import { Layer } from "effect";
 import { ElectronAppLive } from "./app";
 import { ClipShortcutLive } from "./clipShortcut";
+import { PillActionsLive } from "./pillActions";
 import { PillMenuLive } from "./pillMenu";
 import { PlatformLive } from "./platform";
 import { RpcServerLive } from "./rpc/server";
@@ -31,10 +32,10 @@ const AppAdaptersLive = Layer.succeed(
 /** Ports implemented in this app: they need Electron, which only apps/desktop may import. */
 const ElectronPortsLive = OverlayWindowsLive.pipe(Layer.provide(ElectronAppLive));
 
-const CoreLive = Layer.mergeAll(Recordings.layer, Screenshots.layer).pipe(
-  Layer.provideMerge(Layer.mergeAll(LoggingOverlay.layer, Clips.layer)),
-  Layer.provideMerge(ScreenshotFilesDir),
-  Layer.provide([PlatformLive, RecordingStoreFile, IdsLive, AppAdaptersLive]),
+const CoreLive = Sessions.layer.pipe(
+  Layer.provideMerge(Layer.mergeAll(LoggingOverlay.layer, Clips.layer, Screenshots.layer)),
+  Layer.provideMerge(SessionStoreFile),
+  Layer.provide([PlatformLive, IdsLive, AppAdaptersLive]),
   Layer.provideMerge(ElectronPortsLive),
   // NodeServices also gives PlatformLive its ChildProcessSpawner (the macOS capture helper).
   Layer.provide([StorageConfigLive, NodeServices.layer]),
@@ -47,4 +48,8 @@ export const MainLive = Layer.mergeAll(
   ScreenshotShortcutLive,
   ClipShortcutLive,
   ScreenshotProtocolLive,
-).pipe(Layer.provide(PillMenuLive), Layer.provideMerge(CoreLive));
+).pipe(
+  Layer.provide(PillMenuLive),
+  Layer.provideMerge(PillActionsLive),
+  Layer.provideMerge(CoreLive),
+);

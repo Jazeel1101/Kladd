@@ -36,19 +36,21 @@ export const useScreenshotIntake = (frame: NotchFrame) => {
     setIntake({ ...intake, phase: "landed" });
   }
 
-  const id = intake?.flight.screenshot.id ?? null;
+  const shot = intake?.flight.screenshot ?? null;
+  const id = shot?.id ?? null;
+  const url = shot === null ? null : screenshotUrl(shot);
   const landed = intake !== null && intake.phase !== "open" ? id : null;
 
   // Decoded while it flies, so it shows the moment it lands.
   useEffect(() => {
-    if (id === null) return;
+    if (url === null) return;
     const preload = new Image();
-    preload.src = screenshotUrl(id);
+    preload.src = url;
     preload.decode().then(
       () => {},
       () => {},
     );
-  }, [id]);
+  }, [url]);
 
   useEffect(() => {
     if (landed === null) return;
@@ -69,7 +71,7 @@ export const useScreenshotIntake = (frame: NotchFrame) => {
 
   return {
     landing,
-    image: landed === null || landing === null ? null : { ...landing, href: screenshotUrl(landed) },
+    image: landed === null || landing === null || url === null ? null : { ...landing, href: url },
     open: intake !== null && intake.phase !== "closing",
     closing: intake?.phase === "closing",
     shut: () =>
