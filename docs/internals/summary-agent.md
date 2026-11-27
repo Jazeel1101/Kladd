@@ -9,7 +9,7 @@ When a session's folder is finished (`finishSession`), `SummaryAgentClaude` (`pa
   - permission rules in the same shape, with `permissionMode: "dontAsk"` and `permissionPrompts: "none"`, deny anything not allowed instead of asking;
   - the sandbox (`failIfUnavailable`, no unsandboxed commands, `/Users` and `/Volumes` closed but for the data folder, no network) covers any command that runs after all.
 - **Network.** Only Claude Code itself goes online, unsandboxed: to the API, and to refresh the login. Both are Anthropic's.
-- **Retried until logged.** A folder without `summary.md` counts as unfinished until the session is logged, so a quit during the summary runs it again at the next launch; a logged session is never summarized.
+- **Retried until logged.** A folder without `summary.md` counts as unfinished until the session is logged, so a quit or failure during the summary (whose partial `summary.md` is removed) runs it again at the next launch; a logged session is never summarized. Folders are finished one at a time, so one is never summarized twice at once.
 - **`frame_at(clip, t)`** is an in-process MCP tool: `VideoFrames` (`kladd-capture frame`) saves `clips/<clip>/frames/<t>.jpg`, and the agent opens it with Read.
 - **Claude Code's own files.** It leaves `.claude/` in its working folder; the adapter removes it afterwards.
 

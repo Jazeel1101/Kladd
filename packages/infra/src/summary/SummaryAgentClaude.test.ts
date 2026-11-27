@@ -39,13 +39,14 @@ describe("deniedToolUse", () => {
       assert.deepStrictEqual(
         yield* verdicts([
           ["Grep", { pattern: "OneNote" }],
+          ["Grep", { pattern: "/Applications/" }],
           ["Glob", { pattern: "screenshots/*.json" }],
           ["Glob", { pattern: "**/*.md", path: "/Users/elev" }],
           ["Glob", { pattern: "/Users/elev/**/*.pdf" }],
           ["Glob", { pattern: "../../../../Documents/**" }],
           ["Grep", { pattern: "password", path: "~" }],
         ]),
-        [true, true, false, false, false, false],
+        [true, true, true, false, false, false, false],
       );
     }),
   );

@@ -14,7 +14,18 @@ import {
   sessionFiles,
   summaryInstructions,
 } from "@kladd/domain";
-import { Config, Effect, FiberSet, FileSystem, Layer, Option, Path, Schema, Stream } from "effect";
+import {
+  Config,
+  Effect,
+  Exit,
+  FiberSet,
+  FileSystem,
+  Layer,
+  Option,
+  Path,
+  Schema,
+  Stream,
+} from "effect";
 import { z } from "zod";
 import { StorageConfig } from "../StorageConfig";
 
@@ -78,8 +89,10 @@ export const deniedToolUse = (
   switch (toolName) {
     case "Read":
       return readable(input.file_path) ? null : `Read only files in ${scope.dataDir}.`;
-    case "Glob":
     case "Grep":
+      // Its pattern is matched against file contents, so only its path is a path.
+      return readable(input.path) ? null : `Search only in ${scope.dataDir}.`;
+    case "Glob":
       return readable(input.path) &&
         (input.pattern === undefined ||
           (!input.pattern.startsWith("/") && !input.pattern.startsWith("~")) ||
@@ -176,12 +189,15 @@ export const SummaryAgentClaude = Layer.effect(
     const path = yield* Path.Path;
     const frames = yield* VideoFrames;
     const { dataDir } = yield* StorageConfig;
-    const home = yield* Config.NonEmptyString("HOME");
-    const user = yield* Config.NonEmptyString("USER");
+    // Read per summary, so a missing one fails the summary rather than Kladd's start.
+    const account = Config.all({
+      home: Config.NonEmptyString("HOME"),
+      user: Config.NonEmptyString("USER"),
+    }).pipe(Effect.mapError(() => failed("HOME or USER is not set")));
     // Runs frame_at and the tool-use check, which the SDK calls as Promises, in this layer.
     const run = yield* FiberSet.makeRuntimePromise();
 
-    const findClaude = Effect.gen(function* () {
+    const findClaude = Effect.fn("SummaryAgentClaude.findClaude")(function* (home: string) {
       for (const location of claudeLocations(home)) {
         if (yield* fs.exists(location).pipe(Effect.orElseSucceed(() => false))) return location;
       }
@@ -215,7 +231,8 @@ export const SummaryAgentClaude = Layer.effect(
       );
 
     const summarize = Effect.fn("SummaryAgentClaude.summarize")(function* (folder: string) {
-      const claude = yield* findClaude;
+      const { home, user } = yield* account;
+      const claude = yield* findClaude(home);
       const scope: SummaryScope = { dataDir, sessionDir: folder, home, user };
       const check: HookCallback = (input) => {
         const reason =
@@ -235,13 +252,19 @@ export const SummaryAgentClaude = Layer.effect(
         );
       };
       // Stops Claude Code when the summary ends early (interrupted or timed out), then removes the
-      // `.claude/` it leaves in its working folder: the session folder is Kladd's.
+      // `.claude/` it leaves in its working folder: the session folder is Kladd's. A summary.md
+      // from a run that failed goes too, so the folder stays unfinished and is tried again.
       const abortController = yield* Effect.acquireRelease(
         Effect.sync(() => new AbortController()),
-        (controller) =>
+        (controller, exit) =>
           Effect.sync(() => controller.abort()).pipe(
             Effect.andThen(
               fs.remove(path.join(folder, ".claude"), { recursive: true, force: true }),
+            ),
+            Effect.andThen(
+              Exit.isFailure(exit)
+                ? fs.remove(path.join(folder, sessionFiles.summary), { force: true })
+                : Effect.void,
             ),
             Effect.ignore,
           ),
