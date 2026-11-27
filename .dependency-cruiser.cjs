@@ -40,9 +40,10 @@ const packages = {
   infra: {
     dir: "packages/infra",
     workspace: ["core", "domain"],
-    npm: ["effect"],
+    // The Claude Agent SDK runs the summary agent; its tools take zod schemas.
+    npm: ["effect", "@anthropic-ai/claude-agent-sdk", "zod"],
     node: false,
-    hint: "infra implements core's ports with platform-neutral Effect services (FileSystem, HttpClient, ...). OS-specific code goes in packages/platform-<os>; wiring goes in apps/desktop.",
+    hint: "infra implements core's ports with platform-neutral Effect services (FileSystem, HttpClient, ...) and LLM agent SDKs. OS-specific code goes in packages/platform-<os>; wiring goes in apps/desktop.",
   },
   "platform-darwin": {
     dir: "packages/platform-darwin",

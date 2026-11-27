@@ -17,6 +17,7 @@ import {
   SessionCaptureLog,
   SessionCaptureTest,
   TranscriberLog,
+  SummaryAgentTest,
   TranscriberTest,
 } from "@kladd/core/testing";
 import {
@@ -80,7 +81,13 @@ const kladdIn = (dataDir: string, transcriber: TranscriberLayer = TranscriberTes
   Sessions.layer.pipe(
     Layer.provide(LoggingOverlay.layer),
     Layer.provideMerge(Layer.mergeAll(Clips.layer, Screenshots.layer)),
-    Layer.provide([ScreenCaptureTest.granted, IdsTest, FocusTrackerTest(), AppAdaptersTest()]),
+    Layer.provide([
+      ScreenCaptureTest.granted,
+      IdsTest,
+      FocusTrackerTest(),
+      AppAdaptersTest(),
+      SummaryAgentTest(),
+    ]),
     Layer.provideMerge(
       Layer.mergeAll(SessionCaptureTest(), clipCapture, transcriber, OverlayWindowsTest),
     ),

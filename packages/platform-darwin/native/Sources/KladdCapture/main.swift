@@ -20,6 +20,7 @@
 //   kladd-capture focus [--exclude-pid pid]               prints a FocusSnapshot as JSON (Focus.swift)
 //   kladd-capture watch-focus [--exclude-pid pid]
 //       prints a FocusSnapshot line now and on each change in that app; ends when it quits or stdin closes.
+//   kladd-capture frame --video <file.mp4> --at <seconds> --out <file.jpg>   one frame of a clip (Frame.swift)
 //
 // Exit codes: 0 done, 77 permission denied (also prints "denied"), 64 bad usage, 1 anything else.
 
@@ -307,12 +308,14 @@ Task { @MainActor in
     await runRecord(args)
   case "session":
     await runSession(args)
+  case "frame":
+    await runFrame(args)
   default:
     fail(
       "usage: kladd-capture status | request --app <path> | screenshot --out <file> | record --out <file>"
         + " | session --dir <folder> --mode manual|auto"
         + " | accessibility-status | accessibility-request --app <path> | focus [--exclude-pid pid]"
-        + " | watch-focus [--exclude-pid pid]",
+        + " | watch-focus [--exclude-pid pid] | frame --video <file> --at <seconds> --out <file.jpg>",
       code: exitUsage)
   }
 }

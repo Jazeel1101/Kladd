@@ -10,9 +10,11 @@
     "typecheck": "effect-tsgo tsc -p tsconfig.json"
   },
   "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "catalog:",
     "@kladd/core": "workspace:*",
     "@kladd/domain": "workspace:*",
-    "effect": "catalog:"
+    "effect": "catalog:",
+    "zod": "catalog:"
   },
   "devDependencies": {
     "@effect/platform-node": "catalog:",
