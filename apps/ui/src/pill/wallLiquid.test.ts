@@ -1,11 +1,15 @@
 import { assert, describe, it } from "@effect/vitest";
 import { centerAtGap, frameAt } from "./notchPlacement";
 import { dockedLiquid, releaseLiquid, stepLiquid, viewLiquid } from "./wallLiquid";
+import { pillLength } from "./notchShape";
+
+/** The pill with three buttons. */
+const long = pillLength(3);
 
 const area = { left: 0, top: 25, right: 1440, bottom: 900 };
 const atGap = (gap: number) =>
-  frameAt(centerAtGap("left", gap, { x: 0, y: 460 }, area), "column", "left", area);
-const floating = frameAt({ x: 720, y: 460 }, "column", null, area);
+  frameAt(centerAtGap("left", gap, { x: 0, y: 460 }, area, long), "column", "left", area, long);
+const floating = frameAt({ x: 720, y: 460 }, "column", null, area, long);
 
 describe("stepLiquid", () => {
   it("lets go of a docked pill pulled away from the wall", () => {

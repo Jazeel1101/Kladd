@@ -11,8 +11,14 @@
  * Every shape has the same commands, so CSS can transition `d` between them.
  */
 
-/** The pill itself, without anything the wall adds. */
-export const pill = { width: 46, height: 130, radius: 20 };
+/** The pill itself, without anything the wall adds. Its length follows its buttons (pillLength). */
+export const pill = { width: 46, radius: 20 };
+/** What each button adds to the pill's length: the button and the gap before the next. */
+const buttonSlot = 36;
+/** The pill's length along its wall: room for `buttons` buttons, two in idle and three otherwise. */
+export const pillLength = (buttons: 2 | 3): number => 22 + buttons * buttonSlot;
+/** The longest pill, which the snap zones and the window leave room for. */
+const longest = pillLength(3);
 /** The gap at which wall and pill touch. */
 const contactGap = 26;
 /** Radius of the inverted border radius where the docked notch meets the wall. */
@@ -32,9 +38,7 @@ export const flare = fillet + (pill.width - pill.radius) * Math.tan(tilt);
 const size = 560;
 export const canvas = { width: size, height: size };
 /** How far from a wall its pull starts: the wall's snap zone. Room for the docked notch's flare. */
-export const attractRange = (Math.ceil(pill.height + 2 * (flare + shadowPad)) - pill.width) / 2;
-/** The pill's top in the canvas when the window isn't held in by the screen's top or bottom. */
-const restTop = (canvas.height - pill.height) / 2;
+export const attractRange = (Math.ceil(longest + 2 * (flare + shadowPad)) - pill.width) / 2;
 
 /** Bézier handle length for a quarter circle, as a fraction of its radius. */
 const kappa = 0.5523;
@@ -50,9 +54,11 @@ const n = (value: number) => Math.round(value * 100) / 100;
 interface Drop {
   /** Distance from the wall to the pill. Negative squishes the pill against the wall. */
   readonly gap: number;
+  /** The pill's length along the wall (pillLength). */
+  readonly length: number;
   /** The pill's width. */
   readonly reach?: number;
-  /** The pill's top in the canvas. */
+  /** The pill's top in the canvas. Defaults to the middle, where it is when the window isn't held in by the screen's top or bottom. */
   readonly top?: number;
   /**
    * The gap the liquid is shaped for, when it differs from where the pill is: larger while the pull
@@ -66,8 +72,9 @@ interface Drop {
 /** The wall's liquid and the pill as separate subpaths, so they can be drawn apart. */
 export const dropParts = ({
   gap,
+  length,
   reach = pill.width,
-  top = restTop,
+  top = (canvas.height - length) / 2,
   shapeGap = gap,
   lean = true,
 }: Drop): { readonly wall: string; readonly body: string } => {
@@ -75,7 +82,7 @@ export const dropParts = ({
   const r = pill.radius;
   const width = reach + Math.min(gap, 0) * 0.8;
   const x0 = Math.max(gap, 0);
-  const mid = top + pill.height / 2;
+  const mid = top + length / 2;
   const flip = (y: number) => 2 * mid - y;
 
   // The wall spans mid ± wallHalf and curves out to `tip`, arriving heading `dir`. `wallHandle`

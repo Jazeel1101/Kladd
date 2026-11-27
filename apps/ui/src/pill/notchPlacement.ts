@@ -37,14 +37,15 @@ const smoothstep = (from: number, to: number, value: number) => {
 export const orientationOf = (wall: Wall): Orientation =>
   wall === "left" || wall === "right" ? "column" : "row";
 
-const boxSize = (orientation: Orientation) =>
+/** The pill's box for its `length` along the wall (pillLength). */
+const boxSize = (orientation: Orientation, length: number) =>
   orientation === "column"
-    ? { width: pill.width, height: pill.height }
-    : { width: pill.height, height: pill.width };
+    ? { width: pill.width, height: length }
+    : { width: length, height: pill.width };
 
 /** Distance from `wall` to a pill centred at `center`, shaped for that wall. */
-const gapTo = (wall: Wall, center: Point, area: Area): number => {
-  const { width, height } = boxSize(orientationOf(wall));
+const gapTo = (wall: Wall, center: Point, area: Area, length: number): number => {
+  const { width, height } = boxSize(orientationOf(wall), length);
   switch (wall) {
     case "left":
       return center.x - width / 2 - area.left;
@@ -63,11 +64,11 @@ const gapTo = (wall: Wall, center: Point, area: Area): number => {
  * In a corner the zones overlap and the nearer wall wins: they swap on the corner's diagonal,
  * where `cornerTilt` has the pill half turned and neither wall pulling.
  */
-export const zoneAt = (center: Point, area: Area): Wall | null => {
+export const zoneAt = (center: Point, area: Area, length: number): Wall | null => {
   let nearest: Wall | null = null;
   let nearestGap = attractRange;
   for (const wall of docking) {
-    const gap = gapTo(wall, center, area);
+    const gap = gapTo(wall, center, area, length);
     if (gap < nearestGap) {
       nearest = wall;
       nearestGap = gap;
@@ -93,11 +94,11 @@ const inward: Record<Wall, number> = { left: 1, right: -1, top: 1, bottom: -1 };
  * It turns the way it rolls round the corner, so on the diagonal it lies across the corner. Follows
  * the position, so crossing the diagonal back and forth turns the pill back and forth with it.
  */
-const cornerTilt = (wall: Wall, center: Point, area: Area): number => {
-  const gap = gapTo(wall, center, area);
+const cornerTilt = (wall: Wall, center: Point, area: Area, length: number): number => {
+  const gap = gapTo(wall, center, area, length);
   let tilt = 0;
   for (const other of across[wall]) {
-    const otherGap = gapTo(other, center, area);
+    const otherGap = gapTo(other, center, area, length);
     if (otherGap >= attractRange) continue;
     const turn = 0.5 * (1 - smoothstep(0, cornerBand, otherGap - gap));
     if (turn > Math.abs(tilt) / 90) tilt = 90 * turn * inward[wall] * inward[other];
@@ -116,11 +117,12 @@ export const clampCenter = (
   orientation: Orientation,
   wall: Wall | null,
   area: Area,
+  length: number,
 ): Point => {
-  const turned = wall === null ? 0 : Math.abs(cornerTilt(wall, center, area));
+  const turned = wall === null ? 0 : Math.abs(cornerTilt(wall, center, area, length));
   const angle = (turned * Math.PI) / 180;
   const r = pill.radius;
-  const long = pill.height / 2 - r;
+  const long = length / 2 - r;
   const short = pill.width / 2 - r;
   const across = short * Math.cos(angle) + long * Math.sin(angle) + r;
   const along =
@@ -137,17 +139,23 @@ export const clampCenter = (
 };
 
 /** Where a pill let go in `wall`'s zone comes to rest: on the wall, with its flare on screen. */
-export const restingCenter = (wall: Wall, center: Point, area: Area): Point => {
-  const { width, height } = boxSize(orientationOf(wall));
-  const on = centerAtGap(wall, 0, center, area);
+export const restingCenter = (wall: Wall, center: Point, area: Area, length: number): Point => {
+  const { width, height } = boxSize(orientationOf(wall), length);
+  const on = centerAtGap(wall, 0, center, area, length);
   return orientationOf(wall) === "column"
     ? { x: on.x, y: clamp(on.y, area.top + height / 2 + flare, area.bottom - height / 2 - flare) }
     : { x: clamp(on.x, area.left + width / 2 + flare, area.right - width / 2 - flare), y: on.y };
 };
 
 /** Where the pill's centre goes to sit `gap` from `wall`, keeping its place along the wall. */
-export const centerAtGap = (wall: Wall, gap: number, center: Point, area: Area): Point => {
-  const { width, height } = boxSize(orientationOf(wall));
+export const centerAtGap = (
+  wall: Wall,
+  gap: number,
+  center: Point,
+  area: Area,
+  length: number,
+): Point => {
+  const { width, height } = boxSize(orientationOf(wall), length);
   switch (wall) {
     case "left":
       return { x: area.left + gap + width / 2, y: center.y };
@@ -188,6 +196,8 @@ export interface NotchFrame {
     readonly width: number;
     readonly height: number;
   };
+  /** The pill's length along its wall (pillLength). */
+  readonly length: number;
   /** Where the pill starts along `drawWall`, in the window: the shape's `top`. */
   readonly along: number;
   /** The window's top-left corner on screen. */
@@ -217,8 +227,9 @@ export const frameAt = (
   orientation: Orientation,
   wall: Wall | null,
   area: Area,
+  length: number,
 ): NotchFrame => {
-  const { width, height } = boxSize(orientation);
+  const { width, height } = boxSize(orientation, length);
   const half = canvas.width / 2;
   const window = {
     x: Math.round(clamp(center.x - half, area.left, area.right - canvas.width)),
@@ -230,17 +241,18 @@ export const frameAt = (
     width,
     height,
   };
-  const tilt = wall === null ? 0 : cornerTilt(wall, center, area);
+  const tilt = wall === null ? 0 : cornerTilt(wall, center, area, length);
   const drawWall = wall ?? (orientation === "column" ? "left" : "top");
   return {
     wall,
     orientation,
     drawWall,
-    gap: wall === null ? attractRange : gapTo(wall, center, area),
+    gap: wall === null ? attractRange : gapTo(wall, center, area, length),
     offset: offsetFrom(drawWall, box),
     tilt: orientation === "column" ? tilt : -tilt,
     pull: 1 - Math.abs(tilt) / 45,
     box,
+    length,
     along: orientation === "column" ? box.top : box.left,
     window,
   };

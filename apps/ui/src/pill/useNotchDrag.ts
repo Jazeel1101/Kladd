@@ -46,7 +46,7 @@ interface Placed {
 }
 
 /** Main shows the window docked on the left wall (apps/desktop/src/main/windows.ts). */
-const startFrame = (): NotchFrame => {
+const startFrame = (length: number): NotchFrame => {
   const area = workArea();
   return frameAt(
     {
@@ -56,11 +56,12 @@ const startFrame = (): NotchFrame => {
     "column",
     "left",
     area,
+    length,
   );
 };
 
 /**
- * Drag the notch anywhere; while it is held, the SnapZones window tints every wall's zone. Let go
+ * Drag the notch, `length` long along its wall (pillLength), anywhere; while it is held, the SnapZones window tints every wall's zone. Let go
  * in a wall's zone and it springs onto that wall (a column on the
  * sides, a row on the bottom; never the top); let go elsewhere and it floats there. While it moves,
  * `moving` is true and `frame` changes every frame. R turns a floating pill between column and row,
@@ -69,13 +70,13 @@ const startFrame = (): NotchFrame => {
  * Also keeps clicks passing through the window everywhere but the notch (`data-notch-hit`), and
  * tells main where ⌃⇧C screenshots land in it once it rests.
  */
-export const useNotchDrag = () => {
+export const useNotchDrag = (length: number) => {
   const movePill = useAtomSet(movePillAtom);
   const setClickThrough = useAtomSet(setClickThroughAtom);
   const showWindow = useAtomSet(showWindowAtom);
   const hideWindow = useAtomSet(hideWindowAtom);
   const setScreenshotSlot = useAtomSet(setScreenshotSlotAtom);
-  const [frame, setFrame] = useState<NotchFrame>(startFrame);
+  const [frame, setFrame] = useState<NotchFrame>(() => startFrame(length));
   const [moving, setMoving] = useState(false);
   const [liquid, setLiquid] = useState<Liquid>(() => dockedLiquid("left"));
   const [, redraw] = useState(0);
@@ -96,7 +97,7 @@ export const useNotchDrag = () => {
   const liquidNow = useRef(liquid);
 
   const show = (next: Placed) => {
-    const shown = frameAt(next.center, next.orientation, next.wall, workArea());
+    const shown = frameAt(next.center, next.orientation, next.wall, workArea(), length);
     placed.current = next;
     setFrame(shown);
     liquidNow.current = stepLiquid(
@@ -138,7 +139,7 @@ export const useNotchDrag = () => {
     liquidNow.current = releaseLiquid(liquidNow.current, performance.now());
     setLiquid(liquidNow.current);
     // Springs onto the wall and, in a corner, along it until the flare fits on screen.
-    const target = restingCenter(wall, center, workArea());
+    const target = restingCenter(wall, center, workArea(), length);
     const offset = { x: center.x - target.x, y: center.y - target.y };
     const velocity = { x: 0, y: 0 };
     let last = performance.now();
@@ -163,6 +164,21 @@ export const useNotchDrag = () => {
   };
 
   useEffect(() => stopSpring, []);
+
+  // The pill grows or shrinks about its centre when its buttons change; docked, it stays on its
+  // wall with its flare on screen.
+  const lengthBefore = useRef(length);
+  useEffect(() => {
+    if (lengthBefore.current === length) return;
+    lengthBefore.current = length;
+    if (drag.current?.active === true || spring.current !== null) return;
+    const now = current();
+    show(
+      now.wall === null
+        ? now
+        : { ...now, center: restingCenter(now.wall, now.center, workArea(), length) },
+    );
+  });
 
   // The window only gets keys once the notch has been clicked or grabbed (it is a non-activating panel).
   useEffect(() => {
@@ -241,9 +257,9 @@ export const useNotchDrag = () => {
       // The grab stays as it was when the pill changes layout in a corner: the layouts meet at the
       // diagonal, so the pill's centre (and the turn, which follows it) stays continuous.
       const raw = { x: event.screenX - held.grab.x, y: event.screenY - held.grab.y };
-      const wall = zoneAt(raw, area);
+      const wall = zoneAt(raw, area, length);
       const orientation = wall === null ? before.orientation : orientationOf(wall);
-      show({ center: clampCenter(raw, orientation, wall, area), orientation, wall });
+      show({ center: clampCenter(raw, orientation, wall, area, length), orientation, wall });
     },
     onPointerUp: (event: PointerEvent) => end(event, true),
     onPointerCancel: (event: PointerEvent) => end(event, false),
