@@ -1,7 +1,12 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
 import { Effect, Path } from "effect";
-import { claudeOptions, deniedToolUse, type SummaryScope } from "./SummaryAgentClaude";
+import {
+  claudeOptions,
+  connectionFrom,
+  deniedToolUse,
+  type SummaryScope,
+} from "./SummaryAgentClaude";
 
 const scope: SummaryScope = {
   dataDir: "/Users/elev/Library/Application Support/Kladd",
@@ -113,5 +118,28 @@ describe("claudeOptions", () => {
     assert.strictEqual(env?.["ANTHROPIC_BASE_URL"], "https://proxy.example");
     assert.strictEqual(env?.["ANTHROPIC_AUTH_TOKEN"], "token");
     assert.strictEqual(env?.["HOME"], scope.home);
+  });
+});
+
+describe("connectionFrom", () => {
+  it("takes only how to reach the model from the settings, numbers as Claude Code reads them", () => {
+    assert.deepStrictEqual(
+      connectionFrom(
+        JSON.stringify({
+          env: {
+            ANTHROPIC_BASE_URL: "https://proxy.example",
+            ANTHROPIC_AUTH_TOKEN: 12345,
+            NODE_OPTIONS: "--require /tmp/x.js",
+          },
+          hooks: { Stop: [] },
+        }),
+      ),
+      { ANTHROPIC_BASE_URL: "https://proxy.example", ANTHROPIC_AUTH_TOKEN: "12345" },
+    );
+  });
+
+  it("is empty without a file Kladd can read, so the keychain login is used", () => {
+    assert.deepStrictEqual(connectionFrom(""), {});
+    assert.deepStrictEqual(connectionFrom("{ not json"), {});
   });
 });

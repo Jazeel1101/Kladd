@@ -66,17 +66,32 @@ const decodeToolInput = Schema.decodeUnknownOption(ToolInput);
 /**
  * How the student's own Claude Code reaches its model when not through its keychain login: the
  * `env` keys of `~/.claude/settings.json` that set a proxy, key or token, and none of the rest.
+ * Claude Code takes a number there too, so a numeric token doesn't drop the proxy with it.
  */
-const ClaudeConnection = Schema.Struct({
-  ANTHROPIC_BASE_URL: Schema.optional(Schema.String),
-  ANTHROPIC_AUTH_TOKEN: Schema.optional(Schema.String),
-  ANTHROPIC_API_KEY: Schema.optional(Schema.String),
-  ANTHROPIC_CUSTOM_HEADERS: Schema.optional(Schema.String),
-});
-export type ClaudeConnection = typeof ClaudeConnection.Type;
+const ConnectionValue = Schema.Union([Schema.String, Schema.Finite]);
 const decodeClaudeSettings = Schema.decodeUnknownOption(
-  Schema.fromJsonString(Schema.Struct({ env: Schema.optional(ClaudeConnection) })),
+  Schema.fromJsonString(
+    Schema.Struct({
+      env: Schema.optional(
+        Schema.Struct({
+          ANTHROPIC_BASE_URL: Schema.optional(ConnectionValue),
+          ANTHROPIC_AUTH_TOKEN: Schema.optional(ConnectionValue),
+          ANTHROPIC_API_KEY: Schema.optional(ConnectionValue),
+          ANTHROPIC_CUSTOM_HEADERS: Schema.optional(ConnectionValue),
+        }),
+      ),
+    }),
+  ),
 );
+export type ClaudeConnection = Readonly<Record<string, string>>;
+
+/** The connection in the text of the student's settings file; none when Kladd can't read it. */
+export const connectionFrom = (settings: string): ClaudeConnection =>
+  Option.match(decodeClaudeSettings(settings), {
+    onNone: () => ({}),
+    onSome: ({ env }) =>
+      Object.fromEntries(Object.entries(env ?? {}).map(([key, value]) => [key, String(value)])),
+  });
 
 const inside = (dir: string, file: string) => file === dir || file.startsWith(`${dir}/`);
 
@@ -251,13 +266,10 @@ export const SummaryAgentClaude = Layer.effect(
       const { home, user } = yield* account;
       const claude = yield* findClaude(home);
       // Without the file, or with one Kladd can't read, Claude Code falls back to its keychain login.
-      const connection = Option.match(
-        decodeClaudeSettings(
-          yield* fs
-            .readFileString(path.join(home, ".claude", "settings.json"))
-            .pipe(Effect.orElseSucceed(() => "")),
-        ),
-        { onNone: () => ({}), onSome: (settings) => settings.env ?? {} },
+      const connection = connectionFrom(
+        yield* fs
+          .readFileString(path.join(home, ".claude", "settings.json"))
+          .pipe(Effect.orElseSucceed(() => "")),
       );
       const scope: SummaryScope = { dataDir, sessionDir: folder, home, user };
       const check: HookCallback = (input) => {
