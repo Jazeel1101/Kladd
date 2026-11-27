@@ -61,6 +61,13 @@ describe("placeBesidePill", () => {
       "bottom",
     );
   });
+
+  it("grows a floating row sideways when neither above nor below has room for the panel", () => {
+    const middle = { x: 900, y: 440, width: 130, height: 46 };
+    const { bounds, join } = placeBesidePill({ notch: middle, wall: null }, size, screen);
+    assert.strictEqual(join.side, "right");
+    assert.strictEqual(bounds.x + bounds.width - overlayMargin, middle.x);
+  });
 });
 
 describe("placeWithoutPill", () => {

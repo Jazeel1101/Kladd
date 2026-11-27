@@ -55,16 +55,22 @@ const clamp = (value: number, min: number, max: number): number =>
 
 /**
  * The side of the panel the pill is on: the panel grows away from the wall it is docked on. A
- * floating pill grows it toward the side with more room, across its long side.
+ * floating pill grows it toward the side with more room, across its long side, unless only its
+ * short side leaves room for the whole panel.
  */
-const pillSide = ({ notch, wall }: PillDock, screen: Rect): Edge => {
+const pillSide = ({ notch, wall }: PillDock, size: Size, screen: Rect): Edge => {
   if (wall !== null) return wall;
-  if (notch.height >= notch.width) {
-    const right = screen.x + screen.width - (notch.x + notch.width);
-    return right >= notch.x - screen.x ? "left" : "right";
-  }
-  const below = screen.y + screen.height - (notch.y + notch.height);
-  return below >= notch.y - screen.y ? "top" : "bottom";
+  // Room for the panel on each side of the notch, by the side of the panel the pill is then on.
+  const room = {
+    left: screen.x + screen.width - (notch.x + notch.width) - (size.width - overlayMargin),
+    right: notch.x - screen.x - (size.width - overlayMargin),
+    top: screen.y + screen.height - (notch.y + notch.height) - (size.height - overlayMargin),
+    bottom: notch.y - screen.y - (size.height - overlayMargin),
+  };
+  const roomier = (a: Edge, b: Edge): Edge => (room[a] >= room[b] ? a : b);
+  const long = notch.height >= notch.width ? roomier("left", "right") : roomier("top", "bottom");
+  const short = notch.height >= notch.width ? roomier("top", "bottom") : roomier("left", "right");
+  return room[long] < 0 && room[short] >= 0 ? short : long;
 };
 
 /**
@@ -78,7 +84,7 @@ export const placeBesidePill = (
   screen: Rect,
 ): { readonly bounds: Rect; readonly join: PillJoin } => {
   const { notch } = dock;
-  const side = pillSide(dock, screen);
+  const side = pillSide(dock, size, screen);
   const across = side === "left" || side === "right";
   const centre = { x: notch.x + notch.width / 2, y: notch.y + notch.height / 2 };
   const x = Math.round(

@@ -10,7 +10,6 @@ import {
 import { Deferred, Effect, Fiber, Layer, Queue, Ref, Stream } from "effect";
 import {
   AppAdaptersTest,
-  FocusTrackerLog,
   FocusTrackerTest,
   OverlayWindowsLog,
   OverlayWindowsTest,
@@ -68,7 +67,7 @@ describe("LoggingOverlay.open", () => {
       ]);
       assert.deepStrictEqual(yield* now, {
         open: true,
-        panel: "chat",
+        panel: "summary",
         target: { app: "Notes", document: "Uke 1" },
         join: { side: "left", start: 135, end: 265 },
       });
@@ -125,11 +124,11 @@ describe("LoggingOverlay.open", () => {
 });
 
 describe("the pill's buttons", () => {
-  it.effect("the star opens the overlay on its chat, and closes it", () =>
+  it.effect("the star opens the overlay on its summary, and closes it", () =>
     Effect.gen(function* () {
       const overlay = yield* LoggingOverlay;
       yield* overlay.toggle;
-      assert.deepStrictEqual([(yield* now)?.open, (yield* now)?.panel], [true, "chat"]);
+      assert.deepStrictEqual([(yield* now)?.open, (yield* now)?.panel], [true, "summary"]);
       yield* overlay.toggle;
       assert.isFalse((yield* now)?.open);
       assert.deepStrictEqual(
@@ -140,18 +139,18 @@ describe("the pill's buttons", () => {
   );
 
   it.effect(
-    "the star switches the overlay back to its chat from the settings, without closing",
+    "the star switches the overlay back to its summary from the settings, without closing",
     () =>
       Effect.gen(function* () {
         const overlay = yield* LoggingOverlay;
         yield* overlay.toggleSettings;
         yield* overlay.toggle;
-        assert.deepStrictEqual([(yield* now)?.open, (yield* now)?.panel], [true, "chat"]);
+        assert.deepStrictEqual([(yield* now)?.open, (yield* now)?.panel], [true, "summary"]);
         assert.isTrue((yield* shown).every((s) => s.hidden !== true));
       }).pipe(provide()),
   );
 
-  it.effect("the gear opens the overlay on settings, then swaps settings and chat", () =>
+  it.effect("the gear opens the overlay on settings, then swaps settings and summary", () =>
     Effect.gen(function* () {
       const overlay = yield* LoggingOverlay;
       const panels: Array<string | undefined> = [];
@@ -159,35 +158,9 @@ describe("the pill's buttons", () => {
         yield* overlay.toggleSettings;
         panels.push((yield* now)?.panel);
       }
-      assert.deepStrictEqual(panels, ["settings", "chat", "settings"]);
+      assert.deepStrictEqual(panels, ["settings", "summary", "settings"]);
       assert.strictEqual((yield* shown).length, 1, "swapping panels doesn't show it again");
     }).pipe(provide()),
-  );
-});
-
-describe("LoggingOverlay.returnFocus", () => {
-  it.effect("activates the app the overlay follows, leaving the overlay be", () =>
-    Effect.gen(function* () {
-      const overlay = yield* LoggingOverlay;
-      yield* overlay.open;
-      yield* overlay.returnFocus;
-      assert.deepStrictEqual((yield* Ref.get(yield* FocusTrackerLog)).activated, [
-        "com.apple.Notes",
-      ]);
-      assert.deepStrictEqual(
-        (yield* shown).map((s) => s.kind),
-        ["logging"],
-      );
-    }).pipe(provide()),
-  );
-
-  it.effect("blurs the overlay when it doesn't know the app", () =>
-    Effect.gen(function* () {
-      const overlay = yield* LoggingOverlay;
-      yield* overlay.open;
-      yield* overlay.returnFocus;
-      assert.isTrue((yield* shown).at(-1)?.blurred);
-    }).pipe(provide(emptyFocus)),
   );
 });
 

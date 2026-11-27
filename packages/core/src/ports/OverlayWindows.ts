@@ -11,11 +11,6 @@ export class OverlayWindows extends Context.Service<
     /** Shows the window without taking focus from the app the user is in. Moves it to `bounds` if given. */
     readonly show: (kind: WindowKind, bounds?: Rect) => Effect.Effect<void>;
     readonly hide: (kind: WindowKind) => Effect.Effect<void>;
-    /**
-     * Gives keyboard focus back to the app the user writes in, if the window took it when they
-     * clicked into it. The window stays shown.
-     */
-    readonly blur: (kind: WindowKind) => Effect.Effect<void>;
     /** Creates and loads the window without showing it, so its first show is immediate. */
     readonly prepare: (kind: WindowKind) => Effect.Effect<void>;
     /** Moves the window's top-left corner to `position` without animating, so it can follow a drag. */

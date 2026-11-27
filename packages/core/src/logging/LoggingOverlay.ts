@@ -31,30 +31,25 @@ const sameTarget = (a: WritingTarget, b: WritingTarget) =>
 /**
  * Use case: grow the logging overlay out of the pill, and tell its UI what the user is writing in.
  * While it is open, it follows that app, so the writing target changes with the page, and it moves
- * with the pill. The pill's star opens and closes it; its gear swaps the chat for the log's
- * settings. How placement works: docs/internals/overlay-placement.md.
+ * with the pill. The pill's star opens and closes it; its gear swaps the summary for the
+ * log's settings. How placement works: docs/internals/overlay-placement.md.
  */
 export class LoggingOverlay extends Context.Service<
   LoggingOverlay,
   {
-    /** Shows the overlay on its chat, grown out of the pill. Never fails. */
+    /** Shows the overlay on its summary, grown out of the pill. Never fails. */
     readonly open: Effect.Effect<void>;
     /** Hides the overlay and stops following the app it was opened for. */
     readonly close: Effect.Effect<void>;
     /**
-     * The pill's star: opens the overlay on its chat, switches it back to the chat from the
+     * The pill's star: opens the overlay on its summary, switches it back to the summary from the
      * settings, or closes it.
      */
     readonly toggle: Effect.Effect<void>;
-    /** The pill's gear: swaps the open overlay between chat and settings, or opens it on settings. */
+    /** The pill's gear: swaps the open overlay between summary and settings, or opens it on settings. */
     readonly toggleSettings: Effect.Effect<void>;
     /** The pill came to rest at `dock`, or started moving (null). An open overlay moves with it. */
     readonly pillAt: (dock: PillDock | null) => Effect.Effect<void>;
-    /**
-     * Gives keyboard focus back to the app the overlay follows, after the student typed in it. The
-     * overlay stays as it is.
-     */
-    readonly returnFocus: Effect.Effect<void>;
     /** The overlay now, then every change. */
     readonly changes: Stream.Stream<LoggingOverlayState>;
   }
@@ -67,8 +62,6 @@ export class LoggingOverlay extends Context.Service<
       const adapters = yield* AppAdapters;
       const state = yield* SubscriptionRef.make(closedLoggingOverlay);
       const dock = yield* Ref.make<PillDock | null>(null);
-      // The bundle id of the app the overlay follows: where focus goes back to.
-      const writingApp = yield* Ref.make<string | null>(null);
       // The one watch of the app the overlay was opened for. Lives as long as the layer.
       const following = yield* FiberHandle.make<void, never>();
       // One change at a time, so a slow earlier open can't move the overlay after a newer one.
@@ -110,7 +103,6 @@ export class LoggingOverlay extends Context.Service<
           ),
         );
         const adapter = adapterFor(adapters.all, adapters.fallback, snapshot);
-        yield* Ref.set(writingApp, snapshot.app?.bundleId ?? null);
         const { bounds, join } = yield* place;
         yield* Effect.annotateCurrentSpan({ adapter: adapter.id, joined: join !== null });
         // Closed while it is shown, then open: the UI draws the join at the new place first, then
@@ -136,14 +128,14 @@ export class LoggingOverlay extends Context.Service<
 
       const toggle = Effect.gen(function* () {
         const { open, panel } = yield* SubscriptionRef.get(state);
-        if (!open) return yield* show("chat");
-        yield* panel === "settings" ? setPanel("chat") : hide;
+        if (!open) return yield* show("summary");
+        yield* panel === "settings" ? setPanel("summary") : hide;
       });
 
       const toggleSettings = Effect.gen(function* () {
         const { open, panel } = yield* SubscriptionRef.get(state);
         if (!open) return yield* show("settings");
-        yield* setPanel(panel === "settings" ? "chat" : "settings");
+        yield* setPanel(panel === "settings" ? "summary" : "settings");
       });
 
       const pillAt = Effect.fn("LoggingOverlay.pillAt")(function* (next: PillDock | null) {
@@ -158,24 +150,8 @@ export class LoggingOverlay extends Context.Service<
         yield* SubscriptionRef.update(state, (current) => ({ ...current, join }));
       });
 
-      // Activating the app moves focus without touching the overlay. Ordering the overlay out
-      // (OverlayWindows.blur) also gives focus back, but makes it blink, so it is only the fallback.
-      const returnFocus = Effect.gen(function* () {
-        const app = yield* Ref.get(writingApp);
-        if (app === null) return yield* windows.blur("logging");
-        yield* focus
-          .activate(app)
-          .pipe(
-            Effect.catchTag("FocusTrackingFailed", (error) =>
-              Effect.logWarning("Could not activate the writing app", error.reason).pipe(
-                Effect.andThen(windows.blur("logging")),
-              ),
-            ),
-          );
-      }).pipe(Effect.withSpan("LoggingOverlay.returnFocus"));
-
       return LoggingOverlay.of({
-        open: show("chat").pipe(oneAtATime),
+        open: show("summary").pipe(oneAtATime),
         close: hide.pipe(oneAtATime, Effect.withSpan("LoggingOverlay.close")),
         toggle: toggle.pipe(oneAtATime, Effect.withSpan("LoggingOverlay.toggle")),
         toggleSettings: toggleSettings.pipe(
@@ -183,7 +159,6 @@ export class LoggingOverlay extends Context.Service<
           Effect.withSpan("LoggingOverlay.toggleSettings"),
         ),
         pillAt: (next) => pillAt(next).pipe(oneAtATime),
-        returnFocus,
         changes: SubscriptionRef.changes(state),
       });
     }),

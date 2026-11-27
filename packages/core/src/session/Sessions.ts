@@ -307,8 +307,13 @@ export class Sessions extends Context.Service<
         const now = yield* DateTime.now;
         const due = autoEndAt(session, capturesIn(yield* store.read(folder)));
         if (sessionState(session) !== "active") {
-          // Without its summary.md, finishUnfinished writes it below.
-          const status = (yield* store.finished(folder)) ? yield* summarized(folder) : writing;
+          // Without its summary.md, finishUnfinished writes it below, or finished without one.
+          const written = yield* store.summary(folder);
+          const status: SummaryStatus = Option.isSome(written)
+            ? { _tag: "Written", text: written.value }
+            : (yield* store.finished(folder))
+              ? { _tag: "Failed" }
+              : writing;
           yield* SubscriptionRef.set(summary, { folder, status });
           yield* SubscriptionRef.set(open, Option.some(unlogged));
           yield* screenshots.begin(session.id, folder);

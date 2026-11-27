@@ -308,17 +308,12 @@ export const IdsTest = Layer.effect(
 /** What FocusTrackerTest saw. Read it with `yield* FocusTrackerLog` in a test. */
 export class FocusTrackerLog extends Context.Service<
   FocusTrackerLog,
-  Ref.Ref<{
-    readonly permissionRequests: number;
-    /** The bundle ids `activate` was called with, in order. */
-    readonly activated: ReadonlyArray<string>;
-  }>
+  Ref.Ref<{ readonly permissionRequests: number }>
 >()("kladd/core/testing/FocusTrackerLog") {}
 
 /**
  * Always reports `snapshot` (default: nothing known, as without Accessibility permission).
- * `permission` is what it reports before and after a request; counts requests, and logs the apps it
- * activates, in FocusTrackerLog.
+ * `permission` is what it reports before and after a request; counts requests in FocusTrackerLog.
  * Given a FocusTrackingFailed, every call fails with it. Given an Effect, `current` runs it.
  * `watch` emits `changes` (default: what `current` reports, then nothing).
  */
@@ -334,10 +329,7 @@ export const FocusTrackerTest = (
 ) =>
   Layer.unwrap(
     Effect.gen(function* () {
-      const log = yield* Ref.make<{
-        readonly permissionRequests: number;
-        readonly activated: ReadonlyArray<string>;
-      }>({ permissionRequests: 0, activated: [] });
+      const log = yield* Ref.make({ permissionRequests: 0 });
       const current = yield* Ref.make(permission.before);
       const failed = snapshot instanceof FocusTrackingFailed ? snapshot : null;
       const orFail = <A>(effect: Effect.Effect<A>) =>
@@ -352,14 +344,12 @@ export const FocusTrackerTest = (
         watch: changes ?? Stream.fromEffect(read),
         permission: orFail(Ref.get(current)),
         requestPermission: orFail(
-          Ref.update(log, (l) => ({ ...l, permissionRequests: l.permissionRequests + 1 })).pipe(
+          Ref.update(log, (l) => ({ permissionRequests: l.permissionRequests + 1 })).pipe(
             Effect.andThen(permission.answer ?? Effect.void),
             Effect.andThen(Ref.set(current, permission.after)),
             Effect.as(permission.after),
           ),
         ),
-        activate: (bundleId) =>
-          Ref.update(log, (l) => ({ ...l, activated: [...l.activated, bundleId] })),
       });
       return Layer.mergeAll(
         Layer.succeed(FocusTracker, tracker),
@@ -385,8 +375,6 @@ interface ShownWindow {
   readonly hidden?: true;
   /** Set when this entry is a `moveTo`: `bounds` holds the position. */
   readonly moved?: true;
-  /** Set when this entry is a `blur`. */
-  readonly blurred?: true;
 }
 
 /** What OverlayWindowsTest saw. Read it with `yield* OverlayWindowsLog` in a test. */
@@ -399,8 +387,8 @@ const testSize = { width: 300, height: 400 };
 const testDisplay = { x: 0, y: 0, width: 1440, height: 900 };
 
 /**
- * Records every `show`, `hide`, `moveTo` and `blur` in OverlayWindowsLog. Every window is 300x400 on a
- * 1440x900 screen.
+ * Records every `show`, `hide` and `moveTo` in OverlayWindowsLog. Every window is 300x400 on a 1440x900
+ * screen.
  */
 export const OverlayWindowsTest = Layer.unwrap(
   Effect.gen(function* () {
@@ -411,11 +399,6 @@ export const OverlayWindowsTest = Layer.unwrap(
         Ref.update(log, (shown): ReadonlyArray<ShownWindow> => [
           ...shown,
           { kind, bounds: undefined, hidden: true },
-        ]),
-      blur: (kind) =>
-        Ref.update(log, (shown): ReadonlyArray<ShownWindow> => [
-          ...shown,
-          { kind, bounds: undefined, blurred: true },
         ]),
       prepare: () => Effect.void,
       moveTo: (kind, { x, y }) =>

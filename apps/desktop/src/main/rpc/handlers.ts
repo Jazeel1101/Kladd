@@ -30,7 +30,6 @@ export const RpcHandlersLive = KladdRpcs.toLayer(
       ToggleLoggingOverlay: () => logging.toggle,
       ToggleLogSettings: () => logging.toggleSettings,
       WatchLoggingOverlay: () => logging.changes,
-      ReturnFocus: () => logging.returnFocus,
       SetPillDock: ({ dock }) => logging.pillAt(dock),
       WatchScreenshots: () => screenshots.changes,
       LandScreenshot: ({ id }) => screenshots.land(id),

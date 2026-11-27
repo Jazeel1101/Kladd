@@ -227,7 +227,7 @@ const SessionButtons = ({ session }: { readonly session: Session | null }) => {
     );
   }
   if (state === "ended") {
-    const showing = (panel: "chat" | "settings") =>
+    const showing = (panel: "summary" | "settings") =>
       overlay?.open === true && overlay.panel === panel && "text-white";
     return (
       <>
@@ -239,8 +239,8 @@ const SessionButtons = ({ session }: { readonly session: Session | null }) => {
           <GearIcon />
         </NotchButton>
         <NotchButton
-          label={overlay?.open === true ? "Hide log assistant" : "Show log assistant"}
-          className={cn(showing("chat"))}
+          label={overlay?.open === true ? "Hide summary" : "Show summary"}
+          className={cn(showing("summary"))}
           onClick={run(toggleOverlay)}
         >
           <SparklesIcon />

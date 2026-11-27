@@ -21,10 +21,5 @@ export class FocusTracker extends Context.Service<
     readonly permission: Effect.Effect<AccessibilityPermission, FocusTrackingFailed>;
     /** Guides the user to grant permission (System Settings), then reports the result. */
     readonly requestPermission: Effect.Effect<AccessibilityPermission, FocusTrackingFailed>;
-    /**
-     * Makes the app with `bundleId` the active app, as a click on its Dock icon does, which also
-     * takes keyboard focus back from an overlay the user clicked into.
-     */
-    readonly activate: (bundleId: string) => Effect.Effect<void, FocusTrackingFailed>;
   }
 >()("kladd/core/FocusTracker") {}

@@ -16,5 +16,3 @@ export const summaryAtom = KladdClient.runtime.atom(
 /** Use each with `{ payload: undefined }`. */
 export const toggleLoggingOverlayAtom = KladdClient.mutation("ToggleLoggingOverlay");
 export const toggleLogSettingsAtom = KladdClient.mutation("ToggleLogSettings");
-/** Hands keyboard focus back to the app the student writes in. */
-export const returnFocusAtom = KladdClient.mutation("ReturnFocus");

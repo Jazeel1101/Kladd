@@ -31,6 +31,8 @@ interface WindowSpec {
   readonly overlay: boolean;
   /** No macOS window shadow: the surface draws its own, or has none. */
   readonly noShadow?: true;
+  /** Never becomes the key window, even when clicked: it has nothing to type into. */
+  readonly unfocusable?: true;
   /** Starts letting clicks through; the UI turns that off over the parts it draws. */
   readonly clickThrough?: true;
   /** Covers the whole work area instead of opening at `size`. */
@@ -86,6 +88,7 @@ const windowTable: Record<WindowKind, WindowSpec> = {
     size: { width: 360 + 2 * overlayMargin, height: 540 + 2 * overlayMargin },
     overlay: true,
     noShadow: true,
+    unfocusable: true,
     clickThrough: true,
     // Normally grown out of the pill by core's LoggingOverlay; this is only the fallback.
     position: placeWithoutPill,
@@ -149,6 +152,7 @@ const createWindow = (spec: WindowSpec) => {
   const window = new BrowserWindow({
     ...(spec.overlay ? overlayOptions : { title: "Kladd" }),
     ...(spec.noShadow ? { hasShadow: false } : {}),
+    ...(spec.unfocusable ? { focusable: false } : {}),
     ...(spec.effect ? { focusable: false, enableLargerThanScreen: true } : {}),
     // Already where it opens, so its UI reads its real position while it loads (the pill does).
     ...defaultBounds(spec, workArea(null)),
@@ -245,14 +249,6 @@ export const OverlayWindowsLive = Layer.effect(
         if (window !== undefined && !window.isDestroyed()) window.hide();
       }).pipe(Effect.withSpan("OverlayWindows.hide"));
 
-    // On macOS, blur orders the panel out and back in, which hands key focus back to the active
-    // app: the one the user writes in, since showing and clicking a panel never activates Kladd.
-    const blur = (kind: WindowKind) =>
-      Effect.sync(() => {
-        const window = open.get(kind)?.window;
-        if (window !== undefined && !window.isDestroyed() && window.isFocused()) window.blur();
-      }).pipe(Effect.withSpan("OverlayWindows.blur"));
-
     const moveTo = Effect.fn("OverlayWindows.moveTo")(function* (
       kind: WindowKind,
       position: Point,
@@ -272,7 +268,6 @@ export const OverlayWindowsLive = Layer.effect(
     return OverlayWindows.of({
       show,
       hide,
-      blur,
       prepare: (kind) => get(kind).pipe(Effect.asVoid),
       moveTo,
       setClickThrough,

@@ -253,6 +253,22 @@ describe("Sessions", () => {
       }).pipe(Effect.provide(kladd({ summaries: { "session-1": "# Økt" } }))),
   );
 
+  it.effect("an ended session left unfinished shows the summary.md it already has at launch", () =>
+    Effect.gen(function* () {
+      assert.deepStrictEqual(Option.getOrNull(yield* Stream.runHead((yield* Sessions).summary)), {
+        _tag: "Written",
+        text: "# Økt",
+      });
+    }).pipe(
+      Effect.provide(
+        kladd({
+          stored: [stored("old", { endedAt: DateTime.makeUnsafe(1000) })],
+          summaries: { old: "# Økt" },
+        }),
+      ),
+    ),
+  );
+
   it.effect("the summary failed when finishing leaves no summary.md", () =>
     Effect.gen(function* () {
       const sessions = yield* Sessions;

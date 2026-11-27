@@ -38,7 +38,7 @@ export class KladdRpcs extends RpcGroup.make(
     stream: true,
   }),
   /**
-   * The ended session's summary, which the logging overlay's chat shows: being written, written or
+   * The ended session's summary, which the logging overlay shows: being written, written or
    * failed (null without an ended session), then every change.
    */
   Rpc.make("WatchSummary", {
@@ -55,20 +55,15 @@ export class KladdRpcs extends RpcGroup.make(
   Rpc.make("TakeScreenshot"),
   /** Like ⌥⇧C: starts a clip in the active session, or stops the one recording. */
   Rpc.make("ToggleClip"),
-  /** The logging-mode pill's star: opens the logging overlay on its chat, or closes it. */
+  /** The logging-mode pill's star: opens the logging overlay on its summary, or closes it. */
   Rpc.make("ToggleLoggingOverlay"),
-  /** The logging-mode pill's gear: swaps the overlay between chat and the log's settings. */
+  /** The logging-mode pill's gear: swaps the overlay between the summary and the log's settings. */
   Rpc.make("ToggleLogSettings"),
   /** The logging overlay now, then every change. */
   Rpc.make("WatchLoggingOverlay", {
     success: LoggingOverlayState,
     stream: true,
   }),
-  /**
-   * Gives keyboard focus back to the app the student writes in, after they typed in the logging
-   * overlay's composer. The overlay stays open.
-   */
-  Rpc.make("ReturnFocus"),
   /** Pops up the pill's native menu: the session's actions and capture mode, Settings, Quit. */
   Rpc.make("OpenPillMenu"),
   /** The screenshot in flight and the attached ones, then every change. ⌃⇧C takes one. */

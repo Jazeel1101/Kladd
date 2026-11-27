@@ -1,5 +1,5 @@
 /**
- * The Markdown the log assistant writes, parsed into blocks for the chat to render as React
+ * The Markdown of `summary.md`, parsed into blocks for the overlay to render as React
  * elements, never as HTML: paragraphs, headings, nested lists, fenced code, and bold, italics and
  * inline code inside them. Anything else stays plain text.
  */

@@ -3,10 +3,10 @@ import { PillJoin } from "./Placement";
 import { WritingTarget } from "./WritingTarget";
 
 /**
- * What the logging overlay shows: the chat with the log assistant, or the log's settings, which the
+ * What the logging overlay shows: the session's summary, or the log's settings, which the
  * pill's gear swaps in.
  */
-export const LoggingPanel = Schema.Literals(["chat", "settings"]);
+export const LoggingPanel = Schema.Literals(["summary", "settings"]);
 export type LoggingPanel = typeof LoggingPanel.Type;
 
 /** The logging overlay as the pill and the overlay's own UI see it. */
@@ -22,7 +22,7 @@ export type LoggingOverlayState = typeof LoggingOverlayState.Type;
 
 export const closedLoggingOverlay: LoggingOverlayState = {
   open: false,
-  panel: "chat",
+  panel: "summary",
   target: { app: null, document: null },
   join: null,
 };

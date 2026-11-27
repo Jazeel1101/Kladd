@@ -3,35 +3,16 @@ import {
   closedLoggingOverlay,
   overlayMargin,
   type LoggingOverlayState,
-  type SummaryStatus,
   type WritingTarget,
 } from "@kladd/domain";
 import { AsyncResult } from "effect/reactivity";
 import { useEffect, useRef } from "react";
 import { liquidColor } from "../lib/liquid";
 import { setClickThroughAtom } from "../windows/atoms";
-import { loggingOverlayAtom, returnFocusAtom, summaryAtom } from "./atoms";
-import { Composer, Messages, type ChatMessage } from "./Chat";
+import { loggingOverlayAtom, summaryAtom } from "./atoms";
 import { KladdIcon } from "./icons";
 import { growOrigin, neck, panelRadius } from "./neck";
-
-/** The chat opens on the session's summary, as far as the summary agent has come. */
-const summaryMessages = (summary: SummaryStatus | null): ReadonlyArray<ChatMessage> => {
-  if (summary === null) return [];
-  switch (summary._tag) {
-    case "Writing":
-      return [{ from: "assistant", text: "Jeg skriver en oppsummering av økta di …" }];
-    case "Written":
-      return [{ from: "summary", text: summary.text }];
-    case "Failed":
-      return [
-        {
-          from: "assistant",
-          text: "Jeg fikk ikke skrevet en oppsummering av økta. Du kan skrive loggen uten den.",
-        },
-      ];
-  }
-};
+import { Summary } from "./Summary";
 
 /** Where the student writes, as the app adapter reports it: "Microsoft OneNote › Uke 3". */
 const where = ({ app, document }: WritingTarget): string => {
@@ -60,7 +41,7 @@ const Setting = ({ title, text }: { readonly title: string; readonly text: strin
   </li>
 );
 
-/** The log's settings, swapped in for the chat by the pill's gear. */
+/** The log's settings, swapped in for the summary by the pill's gear. */
 const LogSettings = () => (
   <ul className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-5 pb-5 leading-relaxed">
     <Setting title="Språkmodell" text="Hvilken modell som skriver loggen." />
@@ -92,20 +73,6 @@ const useClickThrough = () => {
       document.documentElement.removeEventListener("mouseleave", onLeave);
     };
   }, [setClickThrough]);
-};
-
-/** Esc anywhere in the overlay gives keyboard focus back to the app the student writes in. */
-const useEscapeReturnsFocus = () => {
-  const returnFocus = useAtomSet(returnFocusAtom);
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
-      returnFocus({ payload: undefined });
-    };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [returnFocus]);
 };
 
 /**
@@ -146,11 +113,11 @@ const useGrow = (
 };
 
 /**
- * LoggingOverlay (GLOSSARY: "loggeoverlegg"): the chat where the student and the log assistant turn
- * a session into a section of their log. It grows out of the pill's notch when a session ends, and
- * the two read as one shape: its window lies under the pill's and draws the neck where they join
- * (./neck.ts). Fixed in size; the chat scrolls inside it. The pill's gear swaps in the log's
- * settings, and its star and checkmark close it, so it has no close button.
+ * LoggingOverlay (GLOSSARY: "loggeoverlegg"): the ended session's summary, which the student writes
+ * their log from. It grows out of the pill's notch when a session ends, and the two read as one
+ * shape: its window lies under the pill's and draws the neck where they join (./neck.ts). Fixed in
+ * size; the summary scrolls inside it. It never takes keyboard focus. The pill's gear swaps in the
+ * log's settings, and its star and checkmark close it, so it has no close button.
  */
 export const LoggingOverlay = () => {
   const now = useAtomValue(loggingOverlayAtom);
@@ -159,7 +126,6 @@ export const LoggingOverlay = () => {
   const panel = useRef<HTMLElement>(null);
   const neckRef = useRef<SVGSVGElement>(null);
   useClickThrough();
-  useEscapeReturnsFocus();
   useGrow(panel, neckRef, state);
   const joint =
     state.join === null ? null : neck(state.join, { width: innerWidth, height: innerHeight });
@@ -173,16 +139,11 @@ export const LoggingOverlay = () => {
         style={{ inset: overlayMargin, borderRadius: panelRadius, background: liquidColor }}
       >
         <Header
-          title={state.panel === "chat" ? "Loggassistent" : "Innstillinger for loggen"}
+          title={state.panel === "summary" ? "Oppsummering" : "Innstillinger for loggen"}
           target={state.target}
         />
-        {state.panel === "chat" ? (
-          <>
-            <Messages
-              messages={summaryMessages(AsyncResult.isSuccess(summary) ? summary.value : null)}
-            />
-            <Composer />
-          </>
+        {state.panel === "summary" ? (
+          <Summary summary={AsyncResult.isSuccess(summary) ? summary.value : null} />
         ) : (
           <LogSettings />
         )}
