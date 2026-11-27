@@ -1,7 +1,12 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
 import { Effect, Path } from "effect";
-import { claudeOptions, deniedToolUse, type SummaryScope } from "./SummaryAgentClaude";
+import {
+  claudeOptions,
+  connectionFrom,
+  deniedToolUse,
+  type SummaryScope,
+} from "./SummaryAgentClaude";
 
 const scope: SummaryScope = {
   dataDir: "/Users/elev/Library/Application Support/Kladd",
@@ -72,7 +77,7 @@ describe("deniedToolUse", () => {
 });
 
 describe("claudeOptions", () => {
-  const options = claudeOptions(scope, "/opt/homebrew/bin/claude", {});
+  const options = claudeOptions(scope, "/opt/homebrew/bin/claude", {}, {});
 
   it("runs the student's claude in the session folder without their settings", () => {
     assert.strictEqual(options.pathToClaudeCodeExecutable, "/opt/homebrew/bin/claude");
@@ -101,5 +106,41 @@ describe("claudeOptions", () => {
     assert.strictEqual(options.env?.["DISABLE_TELEMETRY"], "1");
     assert.strictEqual(options.env?.["CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC"], "1");
     assert.isUndefined(options.env?.["ANTHROPIC_API_KEY"]);
+  });
+
+  it("reaches the model through the student's own proxy or key, which can't replace HOME", () => {
+    const env = claudeOptions(
+      scope,
+      "/opt/homebrew/bin/claude",
+      { ANTHROPIC_BASE_URL: "https://proxy.example", ANTHROPIC_AUTH_TOKEN: "token" },
+      {},
+    ).env;
+    assert.strictEqual(env?.["ANTHROPIC_BASE_URL"], "https://proxy.example");
+    assert.strictEqual(env?.["ANTHROPIC_AUTH_TOKEN"], "token");
+    assert.strictEqual(env?.["HOME"], scope.home);
+  });
+});
+
+describe("connectionFrom", () => {
+  it("takes only how to reach the model from the settings, each key on its own and numbers as Claude Code reads them", () => {
+    assert.deepStrictEqual(
+      connectionFrom(
+        JSON.stringify({
+          env: {
+            ANTHROPIC_BASE_URL: "https://proxy.example",
+            ANTHROPIC_AUTH_TOKEN: 12345,
+            ANTHROPIC_CUSTOM_HEADERS: null,
+            NODE_OPTIONS: "--require /tmp/x.js",
+          },
+          hooks: { Stop: [] },
+        }),
+      ),
+      { ANTHROPIC_BASE_URL: "https://proxy.example", ANTHROPIC_AUTH_TOKEN: "12345" },
+    );
+  });
+
+  it("is empty without a file Kladd can read, so the keychain login is used", () => {
+    assert.deepStrictEqual(connectionFrom(""), {});
+    assert.deepStrictEqual(connectionFrom("{ not json"), {});
   });
 });
