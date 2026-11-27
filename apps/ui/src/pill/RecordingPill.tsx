@@ -13,12 +13,11 @@ import {
   startSessionAtom,
   takeScreenshotAtom,
 } from "../session/atoms";
-import { showWindowAtom } from "../windows/atoms";
 import { openMenuAtom } from "./atoms";
 import type { Orientation, Wall } from "./notchPlacement";
 import { attractRange, canvas, dropParts, dropPath, pillLength } from "./notchShape";
-import { roundedPath, trayRects } from "./intake";
-import { useNotchDrag } from "./useNotchDrag";
+import { panelBeside, panelFromWall, roundedPath, trayRects } from "./intake";
+import { useNotchDrag, workArea } from "./useNotchDrag";
 import { useScreenshotIntake } from "./useScreenshotIntake";
 
 const formatElapsed = (duration: Duration.Duration): string => {
@@ -138,9 +137,13 @@ const icon = {
   "aria-hidden": true,
 } as const;
 
-/** Pull the expanded view out of the notch. Points `angle` degrees from pointing right. */
+/** Slide the settings panel out of the notch. Points `angle` degrees from pointing right. */
 const ExpandIcon = ({ angle }: { readonly angle: number }) => (
-  <svg {...icon} style={{ rotate: `${angle}deg` }}>
+  <svg
+    {...icon}
+    className="transition-[rotate] duration-200 ease-out"
+    style={{ rotate: `${angle}deg` }}
+  >
     <path d="M6.5 4 10.5 8l-4 4" />
   </svg>
 );
@@ -242,15 +245,33 @@ const SessionButtons = ({ session }: { readonly session: Session | null }) => {
 };
 
 /**
+ * The settings panel (src/pill/intake.ts) slides out when the chevron is clicked, and back when it
+ * is clicked again: out of the wall, pushing a docked pill off it, or out of a floating pill as its
+ * tray. It slides shut when a screenshot comes in, and stays shut until it has landed. The pill stays put while it is out: its drag
+ * would start from the wall, and would lose the panel it was grabbed by.
+ */
+const useSettingsPanel = (intaking: boolean) => {
+  const [still] = useState(() => window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+  const [panel, setPanel] = useState<"open" | "closing" | null>(null);
+  const close = () => setPanel((now) => (now === "open" ? (still ? null : "closing") : now));
+  if (intaking && panel === "open") setPanel(still ? null : "closing");
+  return {
+    panel,
+    // Not while a screenshot comes in: the panel would mount already closing, with nothing to shut.
+    toggle: () => (panel === "open" ? close() : !intaking && setPanel("open")),
+    shut: () => setPanel((now) => (now === "closing" ? null : now)),
+  };
+};
+
+/**
  * RecordingPill: Kladd's only presence, a notch of liquid docked on a screen edge (a column on the
- * sides, a row on the bottom) or floating. Holds the expanded view and the session's buttons
+ * sides, a row on the bottom) or floating. Holds the settings panel and the session's buttons
  * (SessionButtons), and opens to take in a screenshot (src/pill/intake.ts). Drag it to move it:
  * it is a plain pill in the open, an edge pulls it in when it comes close, and a ghost shows where
  * it will dock. Right-click opens the menu.
  */
 export const RecordingPill = () => {
   const opened = useAtomValue(sessionAtom);
-  const showWindow = useAtomSet(showWindowAtom);
   const openMenu = useAtomSet(openMenuAtom);
   const session = AsyncResult.isSuccess(opened) ? opened.value : null;
   const idle = session === null || sessionState(session) === "logged";
@@ -258,6 +279,27 @@ export const RecordingPill = () => {
   const { box, drawWall, orientation } = frame;
 
   const intake = useScreenshotIntake(frame);
+  const settings = useSettingsPanel(intake.landing !== null);
+  const fromWall =
+    settings.panel !== null && frame.wall !== null
+      ? panelFromWall({ ...frame, wall: frame.wall })
+      : null;
+  const beside =
+    settings.panel !== null && fromWall === null ? panelBeside(frame, workArea()) : null;
+  const besideTray = beside === null ? null : trayRects(frame, beside);
+  const panelVars: ShapeVars | null =
+    fromWall !== null
+      ? { "--tray-shut": path(fromWall.shut), "--tray-open": path(fromWall.open) }
+      : besideTray !== null
+        ? {
+            "--tray-shut": path(roundedPath(besideTray.shut)),
+            "--tray-open": path(roundedPath(besideTray.open)),
+          }
+        : null;
+  const content = fromWall?.content ?? beside;
+  const push = settings.panel === "open" && fromWall !== null ? fromWall.push : { x: 0, y: 0 };
+  const pushed = cn("notch-push", settings.panel === "closing" && "shutting");
+  const pushStyle = { translate: `${push.x}px ${push.y}px` };
   const resting = useMemo(
     () => restingVars(frame.wall !== null, frame.offset, frame.along, frame.length),
     [frame.wall, frame.offset, frame.along, frame.length],
@@ -295,6 +337,7 @@ export const RecordingPill = () => {
         intake.closing && "closing",
       )}
       {...handlers}
+      {...(settings.panel === null ? {} : { onPointerDown: undefined })}
       onContextMenu={(event) => {
         event.preventDefault();
         openMenu({ payload: undefined });
@@ -354,12 +397,30 @@ export const RecordingPill = () => {
             {liveWall !== null && (
               <path transform={faceWall[drawWall]} d={liveWall} fill={liquidColor} />
             )}
-            <path
-              className="notch-drop pointer-events-auto"
-              data-notch-hit
-              transform={tilted}
-              fill={liquidColor}
-            />
+            {panelVars !== null && (
+              <path
+                className={cn(
+                  "notch-tray pointer-events-auto",
+                  settings.panel === "open" && "open",
+                  settings.panel === "closing" && "shutting",
+                )}
+                data-notch-hit
+                style={panelVars}
+                {...(fromWall === null ? {} : { transform: faceWall[drawWall] })}
+                fill={liquidColor}
+                onTransitionEnd={(event) => {
+                  if (event.propertyName === "d") settings.shut();
+                }}
+              />
+            )}
+            <g className={pushed} style={pushStyle}>
+              <path
+                className="notch-drop pointer-events-auto"
+                data-notch-hit
+                transform={tilted}
+                fill={liquidColor}
+              />
+            </g>
             {trayVars !== null && (
               <path
                 className={cn("notch-tray", intake.open && "open")}
@@ -375,12 +436,33 @@ export const RecordingPill = () => {
           )}
         </svg>
 
+        {content !== null && (
+          <div
+            data-notch-hit
+            className={cn(
+              "pointer-events-auto absolute grid place-items-center text-sm text-neutral-400",
+              settings.panel === "open"
+                ? "opacity-100 transition-opacity delay-150 duration-200 starting:opacity-0"
+                : "opacity-0 transition-opacity duration-100",
+            )}
+            style={{
+              left: content.x,
+              top: content.y,
+              width: content.width,
+              height: content.height,
+            }}
+          >
+            Trolled, no settings yet
+          </div>
+        )}
         <div
           className={cn(
             "absolute flex items-center justify-center gap-1",
             orientation === "column" ? "flex-col" : "flex-row",
+            pushed,
           )}
           style={{
+            ...pushStyle,
             left: Math.min(Math.max(box.left, 0), size - box.width),
             top: Math.min(Math.max(box.top, 0), size - box.height),
             width: box.width,
@@ -389,10 +471,10 @@ export const RecordingPill = () => {
           }}
         >
           <NotchButton
-            label="Past sessions"
-            onClick={() => showWindow({ payload: { kind: "expanded" } })}
+            label={settings.panel === "open" ? "Close settings" : "Settings"}
+            onClick={settings.toggle}
           >
-            <ExpandIcon angle={awayFrom[drawWall]} />
+            <ExpandIcon angle={awayFrom[drawWall] + (settings.panel === "open" ? 180 : 0)} />
           </NotchButton>
           <SessionButtons session={session} />
         </div>
