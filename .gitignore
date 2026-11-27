@@ -13,6 +13,9 @@ release
 # Vite+
 .vite-hooks/_
 
+# Design references, kept local
+Kladd-design/
+
 # AI agent worktrees
 .claude/worktrees/
 .claude/settings.local.json
