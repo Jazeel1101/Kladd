@@ -165,19 +165,17 @@ export const useNotchDrag = (length: number) => {
 
   useEffect(() => stopSpring, []);
 
-  // The pill grows or shrinks about its centre when its buttons change; docked, it stays on its
-  // wall with its flare on screen.
-  const lengthBefore = useRef(length);
+  // The pill grows or shrinks about its centre when its buttons change, once it is at rest: docked,
+  // it stays on its wall with its flare on screen; floating, on screen.
   useEffect(() => {
-    if (lengthBefore.current === length) return;
-    lengthBefore.current = length;
-    if (drag.current?.active === true || spring.current !== null) return;
+    if (frame.length === length || drag.current?.active === true || spring.current !== null) return;
     const now = current();
-    show(
+    const area = workArea();
+    const center =
       now.wall === null
-        ? now
-        : { ...now, center: restingCenter(now.wall, now.center, workArea(), length) },
-    );
+        ? clampCenter(now.center, now.orientation, null, area, length)
+        : restingCenter(now.wall, now.center, area, length);
+    show({ ...now, center });
   });
 
   // The window only gets keys once the notch has been clicked or grabbed (it is a non-activating panel).
