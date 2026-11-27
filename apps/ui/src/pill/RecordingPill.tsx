@@ -247,7 +247,7 @@ const SessionButtons = ({ session }: { readonly session: Session | null }) => {
 /**
  * The settings panel (src/pill/intake.ts) slides out when the chevron is clicked, and back when it
  * is clicked again: out of the wall, pushing a docked pill off it, or out of a floating pill as its
- * tray. It slides shut when a screenshot comes in. The pill stays put while it is out: its drag
+ * tray. It slides shut when a screenshot comes in, and stays shut until it has landed. The pill stays put while it is out: its drag
  * would start from the wall, and would lose the panel it was grabbed by.
  */
 const useSettingsPanel = (intaking: boolean) => {
@@ -257,7 +257,8 @@ const useSettingsPanel = (intaking: boolean) => {
   if (intaking && panel === "open") setPanel(still ? null : "closing");
   return {
     panel,
-    toggle: () => (panel === "open" ? close() : setPanel("open")),
+    // Not while a screenshot comes in: the panel would mount already closing, with nothing to shut.
+    toggle: () => (panel === "open" ? close() : !intaking && setPanel("open")),
     shut: () => setPanel((now) => (now === "closing" ? null : now)),
   };
 };
