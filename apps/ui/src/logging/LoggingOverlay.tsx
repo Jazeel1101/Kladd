@@ -3,24 +3,35 @@ import {
   closedLoggingOverlay,
   overlayMargin,
   type LoggingOverlayState,
+  type SummaryStatus,
   type WritingTarget,
 } from "@kladd/domain";
 import { AsyncResult } from "effect/reactivity";
 import { useEffect, useRef } from "react";
 import { liquidColor } from "../lib/liquid";
 import { setClickThroughAtom } from "../windows/atoms";
-import { loggingOverlayAtom, returnFocusAtom } from "./atoms";
+import { loggingOverlayAtom, returnFocusAtom, summaryAtom } from "./atoms";
 import { Composer, Messages, type ChatMessage } from "./Chat";
 import { KladdIcon } from "./icons";
 import { growOrigin, neck, panelRadius } from "./neck";
 
-/** What the chat holds until Kladd has a log assistant to write the summary. */
-const waiting: ReadonlyArray<ChatMessage> = [
-  {
-    from: "assistant",
-    text: "Her kommer oppsummeringen av økta di. Kladd har ingen språkmodell ennå, så jeg kan ikke skrive den nå.",
-  },
-];
+/** The chat opens on the session's summary, as far as the summary agent has come. */
+const summaryMessages = (summary: SummaryStatus | null): ReadonlyArray<ChatMessage> => {
+  if (summary === null) return [];
+  switch (summary._tag) {
+    case "Writing":
+      return [{ from: "assistant", text: "Jeg skriver en oppsummering av økta di …" }];
+    case "Written":
+      return [{ from: "summary", text: summary.text }];
+    case "Failed":
+      return [
+        {
+          from: "assistant",
+          text: "Jeg fikk ikke skrevet en oppsummering av økta. Du kan skrive loggen uten den.",
+        },
+      ];
+  }
+};
 
 /** Where the student writes, as the app adapter reports it: "Microsoft OneNote › Uke 3". */
 const where = ({ app, document }: WritingTarget): string => {
@@ -144,6 +155,7 @@ const useGrow = (
 export const LoggingOverlay = () => {
   const now = useAtomValue(loggingOverlayAtom);
   const state = AsyncResult.isSuccess(now) ? now.value : closedLoggingOverlay;
+  const summary = useAtomValue(summaryAtom);
   const panel = useRef<HTMLElement>(null);
   const neckRef = useRef<SVGSVGElement>(null);
   useClickThrough();
@@ -166,7 +178,9 @@ export const LoggingOverlay = () => {
         />
         {state.panel === "chat" ? (
           <>
-            <Messages messages={waiting} />
+            <Messages
+              messages={summaryMessages(AsyncResult.isSuccess(summary) ? summary.value : null)}
+            />
             <Composer />
           </>
         ) : (

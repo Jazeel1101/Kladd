@@ -10,6 +10,7 @@ import {
   ScreenshotSlot,
   ScreenshotTray,
   Session,
+  SummaryStatus,
 } from "@kladd/domain";
 import { Schema } from "effect";
 import { Rpc, RpcGroup } from "effect/rpc";
@@ -34,6 +35,14 @@ export class KladdRpcs extends RpcGroup.make(
   /** When the clip recording now started (null without one), then every change. */
   Rpc.make("WatchClip", {
     success: Schema.NullOr(Schema.DateTimeUtc),
+    stream: true,
+  }),
+  /**
+   * The ended session's summary, which the logging overlay's chat shows: being written, written or
+   * failed (null without an ended session), then every change.
+   */
+  Rpc.make("WatchSummary", {
+    success: Schema.NullOr(SummaryStatus),
     stream: true,
   }),
   /** The idle pill's start button: starts a session in the mode chosen in the pill menu. */

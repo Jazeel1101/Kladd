@@ -20,6 +20,7 @@ export const RpcHandlersLive = KladdRpcs.toLayer(
     return {
       WatchSession: () => Stream.map(sessions.changes, Option.getOrNull),
       WatchPastSessions: () => sessions.past,
+      WatchSummary: () => sessions.summary,
       WatchClip: () => Stream.map(clips.changes, Option.getOrNull),
       StartSession: () => actions.start,
       EndSession: () => actions.end,
