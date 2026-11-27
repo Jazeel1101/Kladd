@@ -5,10 +5,16 @@ import { DateTime, Duration } from "effect";
 import { AsyncResult } from "effect/reactivity";
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { cn } from "../lib/cn";
+import { liquidColor } from "../lib/liquid";
+import {
+  loggingOverlayAtom,
+  toggleLoggingOverlayAtom,
+  toggleLogSettingsAtom,
+} from "../logging/atoms";
+import { SparklesIcon } from "../logging/icons";
 import {
   endSessionAtom,
   finishLoggingAtom,
-  openLoggingOverlayAtom,
   sessionAtom,
   startSessionAtom,
   takeScreenshotAtom,
@@ -62,8 +68,6 @@ const restingVars = (docked: boolean, offset: number, along: number, length: num
 };
 
 const size = canvas.width;
-/** One flat colour for the pill, the wall's liquid and what the wall lets go of. */
-const liquidColor = "#18181b";
 
 /** Turns the shape, drawn against a left wall, to face `wall`. */
 const faceWall: Record<Wall, string> = {
@@ -156,10 +160,14 @@ const ScreenshotIcon = () => (
   </svg>
 );
 
-/** A pencil: write the log, in the logging overlay. */
-const WriteIcon = () => (
-  <svg {...icon}>
-    <path d="M10.5 3.25 12.75 5.5 6 12.25H3.75V10z" />
+/** A cog: the log's settings, in the logging overlay. */
+const GearIcon = () => (
+  <svg {...icon} strokeWidth={1}>
+    <path
+      fill="currentColor"
+      fillRule="evenodd"
+      d="M13.36 6.36 15.07 6.63 15.07 9.37 13.36 9.64 12.94 10.63 13.97 12.03 12.03 13.97 10.63 12.94 9.64 13.36 9.37 15.07 6.63 15.07 6.36 13.36 5.37 12.94 3.97 13.97 2.03 12.03 3.06 10.63 2.64 9.64 0.93 9.37 0.93 6.63 2.64 6.36 3.06 5.37 2.03 3.97 3.97 2.03 5.37 3.06 6.36 2.64 6.63 0.93 9.37 0.93 9.64 2.64 10.63 3.06 12.03 2.03 13.97 3.97 12.94 5.37ZM10.3 8a2.3 2.3 0 1 0 -4.6 0a2.3 2.3 0 1 0 4.6 0Z"
+    />
   </svg>
 );
 
@@ -190,9 +198,12 @@ const RecordIndicator = ({ recording }: { readonly recording: boolean }) => (
 );
 
 /**
- * The pill's buttons after Past sessions, for the open session (domain sessionState): none, so the
- * ring starts one; active, so take screenshots, or end it with the lit red dot; ended, so write the
- * log (logging mode, GLOSSARY: "loggemodus") and tick it off. Clips are taken with ⌥⇧C and the menu.
+ * The pill's buttons for the open session (domain sessionState), after the settings chevron: none,
+ * so the ring starts one; active, so take screenshots, or end it with the lit red dot. Ended
+ * (logging mode, GLOSSARY: "loggemodus"), they are the only ones, as the gear holds the log's
+ * settings: the gear, the logging overlay's star, and done. The overlay has no close button: the
+ * star opens and closes it, and the checkmark closes it for good. Clips are taken with ⌥⇧C and the
+ * menu.
  */
 const SessionButtons = ({ session }: { readonly session: Session | null }) => {
   const state = session === null ? null : sessionState(session);
@@ -201,7 +212,10 @@ const SessionButtons = ({ session }: { readonly session: Session | null }) => {
   const end = useAtomSet(endSessionAtom);
   const finishLogging = useAtomSet(finishLoggingAtom);
   const screenshot = useAtomSet(takeScreenshotAtom);
-  const openLogging = useAtomSet(openLoggingOverlayAtom);
+  const toggleOverlay = useAtomSet(toggleLoggingOverlayAtom);
+  const toggleSettings = useAtomSet(toggleLogSettingsAtom);
+  const overlayNow = useAtomValue(loggingOverlayAtom);
+  const overlay = AsyncResult.isSuccess(overlayNow) ? overlayNow.value : null;
   const run = (action: (options: { payload: undefined }) => void) => () =>
     action({ payload: undefined });
 
@@ -213,16 +227,25 @@ const SessionButtons = ({ session }: { readonly session: Session | null }) => {
     );
   }
   if (state === "ended") {
+    const showing = (panel: "summary" | "settings") =>
+      overlay?.open === true && overlay.panel === panel && "text-white";
     return (
       <>
-        <NotchButton label="Write the log" onClick={run(openLogging)}>
-          <WriteIcon />
+        <NotchButton
+          label="Log settings"
+          className={cn(showing("settings"))}
+          onClick={run(toggleSettings)}
+        >
+          <GearIcon />
         </NotchButton>
         <NotchButton
-          label="Done logging"
-          className="size-9 text-emerald-400 hover:text-emerald-300"
-          onClick={run(finishLogging)}
+          label={overlay?.open === true ? "Hide summary" : "Show summary"}
+          className={cn(showing("summary"))}
+          onClick={run(toggleOverlay)}
         >
+          <SparklesIcon />
+        </NotchButton>
+        <NotchButton label="Done logging" onClick={run(finishLogging)}>
           <DoneIcon />
         </NotchButton>
       </>
@@ -247,18 +270,19 @@ const SessionButtons = ({ session }: { readonly session: Session | null }) => {
 /**
  * The settings panel (src/pill/intake.ts) slides out when the chevron is clicked, and back when it
  * is clicked again: out of the wall, pushing a docked pill off it, or out of a floating pill as its
- * tray. It slides shut when a screenshot comes in, and stays shut until it has landed. The pill stays put while it is out: its drag
+ * tray. It slides shut when a screenshot comes in, and stays shut until it has landed, and in
+ * logging mode, which has no chevron. The pill stays put while it is out: its drag
  * would start from the wall, and would lose the panel it was grabbed by.
  */
-const useSettingsPanel = (intaking: boolean) => {
+const useSettingsPanel = (keptShut: boolean) => {
   const [still] = useState(() => window.matchMedia("(prefers-reduced-motion: reduce)").matches);
   const [panel, setPanel] = useState<"open" | "closing" | null>(null);
   const close = () => setPanel((now) => (now === "open" ? (still ? null : "closing") : now));
-  if (intaking && panel === "open") setPanel(still ? null : "closing");
+  if (keptShut && panel === "open") setPanel(still ? null : "closing");
   return {
     panel,
     // Not while a screenshot comes in: the panel would mount already closing, with nothing to shut.
-    toggle: () => (panel === "open" ? close() : !intaking && setPanel("open")),
+    toggle: () => (panel === "open" ? close() : !keptShut && setPanel("open")),
     shut: () => setPanel((now) => (now === "closing" ? null : now)),
   };
 };
@@ -272,14 +296,23 @@ const useSettingsPanel = (intaking: boolean) => {
  */
 export const RecordingPill = () => {
   const opened = useAtomValue(sessionAtom);
+  const overlayNow = useAtomValue(loggingOverlayAtom);
   const openMenu = useAtomSet(openMenuAtom);
   const session = AsyncResult.isSuccess(opened) ? opened.value : null;
-  const idle = session === null || sessionState(session) === "logged";
+  const state = session === null ? null : sessionState(session);
+  const idle = state === null || state === "logged";
+  // Logging mode has no settings chevron: the gear holds the log's settings, and a panel pushing
+  // the pill off the wall would tear it from the logging overlay.
+  const logging = state === "ended";
+  // Joined to the logging overlay, the notch and the overlay's panel are one shape, which the
+  // overlay shades; the notch's own shadow would fall across the join.
+  const joined =
+    AsyncResult.isSuccess(overlayNow) && overlayNow.value.open && overlayNow.value.join !== null;
   const { frame, moving, liquid, turns, handlers } = useNotchDrag(pillLength(idle ? 2 : 3));
   const { box, drawWall, orientation } = frame;
 
   const intake = useScreenshotIntake(frame);
-  const settings = useSettingsPanel(intake.landing !== null);
+  const settings = useSettingsPanel(intake.landing !== null || logging);
   const fromWall =
     settings.panel !== null && frame.wall !== null
       ? panelFromWall({ ...frame, wall: frame.wall })
@@ -393,7 +426,7 @@ export const RecordingPill = () => {
             )}
           </defs>
           {/* The shadow sits outside the turn, so it always falls down the screen. */}
-          <g filter="url(#drop-shadow)">
+          <g filter={joined ? undefined : "url(#drop-shadow)"}>
             {liveWall !== null && (
               <path transform={faceWall[drawWall]} d={liveWall} fill={liquidColor} />
             )}
@@ -470,12 +503,14 @@ export const RecordingPill = () => {
             rotate: `${frame.tilt}deg`,
           }}
         >
-          <NotchButton
-            label={settings.panel === "open" ? "Close settings" : "Settings"}
-            onClick={settings.toggle}
-          >
-            <ExpandIcon angle={awayFrom[drawWall] + (settings.panel === "open" ? 180 : 0)} />
-          </NotchButton>
+          {!logging && (
+            <NotchButton
+              label={settings.panel === "open" ? "Close settings" : "Settings"}
+              onClick={settings.toggle}
+            >
+              <ExpandIcon angle={awayFrom[drawWall] + (settings.panel === "open" ? 180 : 0)} />
+            </NotchButton>
+          )}
           <SessionButtons session={session} />
         </div>
       </div>

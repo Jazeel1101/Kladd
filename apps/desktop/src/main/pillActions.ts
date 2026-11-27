@@ -1,4 +1,4 @@
-import { Clips, LoggingOverlay, Screenshots, Sessions } from "@kladd/core";
+import { Clips, Screenshots, Sessions } from "@kladd/core";
 import type { CaptureMode } from "@kladd/domain";
 import { dialog } from "electron";
 import { Context, Effect, Layer } from "effect";
@@ -19,7 +19,6 @@ export class PillActions extends Context.Service<
     readonly finishLogging: Effect.Effect<void>;
     readonly screenshot: Effect.Effect<void>;
     readonly clip: Effect.Effect<void>;
-    readonly openLogging: Effect.Effect<void>;
   }
 >()("kladd/desktop/PillActions") {}
 
@@ -31,7 +30,6 @@ export const PillActionsLive = Layer.effect(
     const sessions = yield* Sessions;
     const screenshots = yield* Screenshots;
     const clips = yield* Clips;
-    const logging = yield* LoggingOverlay;
     return PillActions.of({
       start: sessions.start(captureMode).pipe(
         Effect.asVoid,
@@ -59,7 +57,6 @@ export const PillActionsLive = Layer.effect(
       clip: clips.toggle.pipe(
         Effect.catch((error) => showError(captureErrorMessage(error._tag, "record the clip"))),
       ),
-      openLogging: logging.open,
     });
   }),
 );

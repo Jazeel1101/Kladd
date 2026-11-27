@@ -1,6 +1,7 @@
 import { OverlayWindows } from "@kladd/core";
 import {
-  placeWithoutAnchor,
+  overlayMargin,
+  placeWithoutPill,
   type Point,
   type Rect,
   type Size,
@@ -30,6 +31,8 @@ interface WindowSpec {
   readonly overlay: boolean;
   /** No macOS window shadow: the surface draws its own, or has none. */
   readonly noShadow?: true;
+  /** Never becomes the key window, even when clicked: it has nothing to type into. */
+  readonly unfocusable?: true;
   /** Starts letting clicks through; the UI turns that off over the parts it draws. */
   readonly clickThrough?: true;
   /** Covers the whole work area instead of opening at `size`. */
@@ -43,8 +46,6 @@ interface WindowSpec {
    * never takes the pointer or focus, and keeps animating while it is hidden.
    */
   readonly effect?: true;
-  /** The user can drag it by its UI's drag region (`-webkit-app-region: drag`). Overlays default to fixed. */
-  readonly movable?: true;
 }
 
 /**
@@ -82,12 +83,15 @@ const windowTable: Record<WindowKind, WindowSpec> = {
     position: (_size, area) => area,
   },
   logging: {
-    size: { width: 360, height: 480 },
+    // A 2:3 panel, and room around it for the shadow the UI draws round the panel and its neck
+    // into the pill (apps/ui/src/logging/LoggingOverlay.tsx).
+    size: { width: 360 + 2 * overlayMargin, height: 540 + 2 * overlayMargin },
     overlay: true,
-    // By its header. The next open places it again; following focus only changes its text.
-    movable: true,
-    // Normally placed by core's LoggingOverlay; this is only the fallback.
-    position: placeWithoutAnchor,
+    noShadow: true,
+    unfocusable: true,
+    clickThrough: true,
+    // Normally grown out of the pill by core's LoggingOverlay; this is only the fallback.
+    position: placeWithoutPill,
   },
   expanded: {
     size: { width: 720, height: 560 },
@@ -148,7 +152,7 @@ const createWindow = (spec: WindowSpec) => {
   const window = new BrowserWindow({
     ...(spec.overlay ? overlayOptions : { title: "Kladd" }),
     ...(spec.noShadow ? { hasShadow: false } : {}),
-    ...(spec.movable ? { movable: true } : {}),
+    ...(spec.unfocusable ? { focusable: false } : {}),
     ...(spec.effect ? { focusable: false, enableLargerThanScreen: true } : {}),
     // Already where it opens, so its UI reads its real position while it loads (the pill does).
     ...defaultBounds(spec, workArea(null)),

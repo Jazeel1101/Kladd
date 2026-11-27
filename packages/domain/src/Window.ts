@@ -5,7 +5,7 @@ import { Schema } from "effect";
  * no main window.
  * - pill: RecordingPill, docked on a screen edge or floating. Always shown.
  * - zones: SnapZones, the screen edges where the pill docks; shown while the pill is dragged.
- * - logging: LoggingOverlay, next to where the user writes; opens when a session ends.
+ * - logging: LoggingOverlay, grown out of the pill; opens when a session ends.
  * - expanded: ExpandedView, the past sessions, opened from the pill.
  * - settings: the only normal window, opened from the pill menu.
  * - flight: ScreenshotFlight, a click-through overlay over the whole display that flies a new
@@ -23,12 +23,18 @@ export type WindowKind = typeof WindowKind.Type;
 
 /**
  * Windows the UI may open itself (contract ShowWindow). Not `logging`: core's LoggingOverlay opens it,
- * because it has to be placed next to where the user writes.
+ * because it grows out of wherever the pill rests.
  */
 export const OpenableWindow = Schema.Literals(["expanded", "zones"]);
 
 /**
  * Windows the UI may close itself (contract HideWindow). Not `pill`: it always stays. Not `logging`:
- * core's LoggingOverlay closes it (contract CloseLoggingOverlay), because it follows focus while open.
+ * core's LoggingOverlay closes it (contract ToggleLoggingOverlay), because it follows focus while open.
  */
 export const ClosableWindow = Schema.Literals(["expanded", "zones"]);
+
+/**
+ * Windows larger than what they draw, which let clicks through their empty space (contract
+ * SetClickThrough): the UI turns that off while the pointer is over what it draws.
+ */
+export const ClickThroughWindow = Schema.Literals(["pill", "logging"]);

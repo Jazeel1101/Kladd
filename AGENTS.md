@@ -27,27 +27,27 @@ We can't compromise on these.
 
 The Electron main process is the backend; every window is a thin view over it, picked by URL hash (`#pill`) from one window table in `apps/desktop/src/main/windows.ts`:
 
-| Window             | Where                                                                 | Shows                                                                                                                                     |
-| ------------------ | --------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| `RecordingPill`    | Left screen edge, ~4/5 down; dragged to any edge, or floating         | Always. Past sessions, then per session state: start; screenshot, end; log, done. Menu: the session's actions, clip, mode, Settings, Quit |
-| `LoggingOverlay`   | Next to where the user writes (`docs/internals/overlay-placement.md`) | When a session ends                                                                                                                       |
-| `ExpandedView`     | Overlay                                                               | Opened from the pill: past sessions                                                                                                       |
-| `ScreenshotFlight` | Over the whole main display (`docs/internals/screenshot-flight.md`)   | While a ⌃⇧C screenshot flies into the pill                                                                                                |
-| Settings           | The only normal window                                                | Opened from the pill menu                                                                                                                 |
+| Window             | Where                                                               | Shows                                                                                                                                                                        |
+| ------------------ | ------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `RecordingPill`    | Left screen edge, ~4/5 down; dragged to any edge, or floating       | Always. Settings chevron, then per session state: start; screenshot, end. Logging mode: log settings, overlay, done. Menu: the session's actions, clip, mode, Settings, Quit |
+| `LoggingOverlay`   | Grown out of the pill (`docs/internals/overlay-placement.md`)       | When a session ends, and from the pill's star                                                                                                                                |
+| `ExpandedView`     | Overlay                                                             | Opened from the pill: past sessions                                                                                                                                          |
+| `ScreenshotFlight` | Over the whole main display (`docs/internals/screenshot-flight.md`) | While a ⌃⇧C screenshot flies into the pill                                                                                                                                   |
+| Settings           | The only normal window                                              | Opened from the pill menu                                                                                                                                                    |
 
 The UI reaches main only through `KladdRpcs` over MessagePorts (`docs/internals/rpc-over-messageports.md`); the pill menu is the other entry point. OS work runs in the Swift helper `kladd-capture`, one process per call, so macOS attributes its permissions to Kladd. Dependencies point inward, `apps → infra/platform → core → domain`, and each package's `AGENTS.md` says what belongs there and which file to copy:
 
-| Package                    | Holds                                                      |
-| -------------------------- | ---------------------------------------------------------- |
-| `packages/domain`          | Schemas, branded IDs, tagged errors, pure functions        |
-| `packages/contract`        | `KladdRpcs`: every call ui can make to main                |
-| `packages/core`            | Use cases, and the ports (interfaces) they need            |
-| `packages/infra`           | Port implementations that work on any OS (files, IDs, LLM) |
-| `packages/platform-darwin` | Port implementations for macOS, via the Swift helper       |
-| `packages/adapters`        | One pure adapter per supported app (overlay anchoring)     |
-| `packages/rpc-electron`    | MessagePort transport for Effect RPC                       |
-| `apps/desktop`             | Electron main + preload; the only place layers are wired   |
-| `apps/ui`                  | React renderer, one route per window                       |
+| Package                    | Holds                                                           |
+| -------------------------- | --------------------------------------------------------------- |
+| `packages/domain`          | Schemas, branded IDs, tagged errors, pure functions             |
+| `packages/contract`        | `KladdRpcs`: every call ui can make to main                     |
+| `packages/core`            | Use cases, and the ports (interfaces) they need                 |
+| `packages/infra`           | Port implementations that work on any OS (files, IDs, LLM)      |
+| `packages/platform-darwin` | Port implementations for macOS, via the Swift helper            |
+| `packages/adapters`        | One pure adapter per supported app (what the student writes in) |
+| `packages/rpc-electron`    | MessagePort transport for Effect RPC                            |
+| `apps/desktop`             | Electron main + preload; the only place layers are wired        |
+| `apps/ui`                  | React renderer, one route per window                            |
 
 A feature that crosses packages copies the "session" slice: `packages/domain/src/Session.ts` → `packages/core/src/session/Sessions.ts` → `packages/platform-darwin/src/SessionCaptureDarwin.ts` + `packages/infra/src/session/SessionStoreFile.ts` → `apps/desktop/src/main/MainLive.ts`, watched through `WatchSession` → `apps/ui/src/session/atoms.ts` → `apps/ui/src/pill/`. A new app is one adapter file: `docs/operations/adding-app-support.md`.
 

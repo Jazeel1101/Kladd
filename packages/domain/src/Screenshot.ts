@@ -1,5 +1,5 @@
 import { Schema } from "effect";
-import { Rect, type Size } from "./Placement";
+import { Edge, Rect, type Size } from "./Placement";
 import { SessionId } from "./Session";
 
 /** Identifies one screenshot. A UUID, because it also names the screenshot's file and URL. */
@@ -50,7 +50,7 @@ export const emptyScreenshotTray: ScreenshotTray = { flying: null, attached: [] 
  */
 export const ScreenshotSlot = Schema.Struct({
   room: Rect,
-  hug: Schema.NullOr(Schema.Literals(["left", "right", "top", "bottom"])),
+  hug: Schema.NullOr(Edge),
 });
 export type ScreenshotSlot = typeof ScreenshotSlot.Type;
 

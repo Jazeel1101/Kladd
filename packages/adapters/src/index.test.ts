@@ -12,7 +12,7 @@ describe("appAdapters", () => {
   it("loads only adapters", () => {
     for (const adapter of appAdapters) {
       assert.isFunction(
-        adapter.anchor,
+        adapter.target,
         "Every export of a file in src/apps/ is loaded as an adapter: export only the makeAppAdapter(...) value, and move helpers out of src/apps/.",
       );
     }

@@ -20,15 +20,17 @@ export const RpcHandlersLive = KladdRpcs.toLayer(
     return {
       WatchSession: () => Stream.map(sessions.changes, Option.getOrNull),
       WatchPastSessions: () => sessions.past,
+      WatchSummary: () => sessions.summary,
       WatchClip: () => Stream.map(clips.changes, Option.getOrNull),
       StartSession: () => actions.start,
       EndSession: () => actions.end,
       FinishLogging: () => actions.finishLogging,
       TakeScreenshot: () => actions.screenshot,
       ToggleClip: () => actions.clip,
-      OpenLoggingOverlay: () => actions.openLogging,
+      ToggleLoggingOverlay: () => logging.toggle,
+      ToggleLogSettings: () => logging.toggleSettings,
       WatchLoggingOverlay: () => logging.changes,
-      CloseLoggingOverlay: () => logging.close,
+      SetPillDock: ({ dock }) => logging.pillAt(dock),
       WatchScreenshots: () => screenshots.changes,
       LandScreenshot: ({ id }) => screenshots.land(id),
       SetScreenshotSlot: ({ slot }) => screenshots.aimAt(slot),
@@ -36,7 +38,7 @@ export const RpcHandlersLive = KladdRpcs.toLayer(
       ShowWindow: ({ kind }) => windows.show(kind),
       HideWindow: ({ kind }) => windows.hide(kind),
       MovePill: ({ position }) => windows.moveTo("pill", position),
-      SetPillClickThrough: ({ clickThrough }) => windows.setClickThrough("pill", clickThrough),
+      SetClickThrough: ({ kind, clickThrough }) => windows.setClickThrough(kind, clickThrough),
     };
   }),
 );

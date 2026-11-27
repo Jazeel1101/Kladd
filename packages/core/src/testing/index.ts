@@ -180,6 +180,8 @@ export const TranscriberTest = (language: string | TranscriptionFailed = "no") =
 export const SessionStoreTest = (
   sessions: ReadonlyArray<Session> = [],
   screenshots: ReadonlyArray<ScreenshotInfo> = [],
+  /** The `summary.md` of each session that has one, by session id. */
+  summaries: Readonly<Record<string, string>> = {},
 ) =>
   Layer.effect(
     SessionStore,
@@ -230,6 +232,10 @@ export const SessionStoreTest = (
             ),
           ),
         finished: (folder) => Effect.map(Ref.get(overviews), (written) => written.has(folder)),
+        summary: (folder) =>
+          Effect.succeed(
+            Option.fromNullishOr(summaries[folder.slice(folder.lastIndexOf("/") + 1)]),
+          ),
         screenshotFile: (folder, id) => Effect.succeed(`${folder}/screenshots/${id}.png`),
         saveScreenshot: (folder, info) =>
           Ref.update(shots, (now) => new Map(now).set(folder, [...(now.get(folder) ?? []), info])),
@@ -352,13 +358,13 @@ export const FocusTrackerTest = (
     }),
   );
 
-/** The registered adapters: none by default, with a fallback that anchors to the caret. */
+/** The registered adapters: none by default, with a fallback that reports the default target. */
 export const AppAdaptersTest = (all: ReadonlyArray<AppAdapter> = []) =>
   Layer.succeed(
     AppAdapters,
     AppAdapters.of({
       all,
-      fallback: makeAppAdapter({ id: "test-fallback", bundleIds: [], anchor: (f) => f.caret }),
+      fallback: makeAppAdapter({ id: "test-fallback", bundleIds: [] }),
     }),
   );
 
@@ -367,6 +373,8 @@ interface ShownWindow {
   readonly bounds: Rect | undefined;
   /** Set when this entry is a `hide`. */
   readonly hidden?: true;
+  /** Set when this entry is a `moveTo`: `bounds` holds the position. */
+  readonly moved?: true;
 }
 
 /** What OverlayWindowsTest saw. Read it with `yield* OverlayWindowsLog` in a test. */
@@ -378,7 +386,10 @@ export class OverlayWindowsLog extends Context.Service<
 const testSize = { width: 300, height: 400 };
 const testDisplay = { x: 0, y: 0, width: 1440, height: 900 };
 
-/** Records every `show` and `hide` in OverlayWindowsLog. Every window is 300x400 on a 1440x900 screen. */
+/**
+ * Records every `show`, `hide` and `moveTo` in OverlayWindowsLog. Every window is 300x400 on a 1440x900
+ * screen.
+ */
 export const OverlayWindowsTest = Layer.unwrap(
   Effect.gen(function* () {
     const log = yield* Ref.make<ReadonlyArray<ShownWindow>>([]);
@@ -390,7 +401,11 @@ export const OverlayWindowsTest = Layer.unwrap(
           { kind, bounds: undefined, hidden: true },
         ]),
       prepare: () => Effect.void,
-      moveTo: () => Effect.void,
+      moveTo: (kind, { x, y }) =>
+        Ref.update(log, (shown): ReadonlyArray<ShownWindow> => [
+          ...shown,
+          { kind, bounds: { x, y, ...testSize }, moved: true },
+        ]),
       setClickThrough: () => Effect.void,
       size: () => testSize,
       workArea: () => Effect.succeed(testDisplay),

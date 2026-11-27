@@ -21,4 +21,3 @@ export const startSessionAtom = KladdClient.mutation("StartSession");
 export const endSessionAtom = KladdClient.mutation("EndSession");
 export const finishLoggingAtom = KladdClient.mutation("FinishLogging");
 export const takeScreenshotAtom = KladdClient.mutation("TakeScreenshot");
-export const openLoggingOverlayAtom = KladdClient.mutation("OpenLoggingOverlay");
