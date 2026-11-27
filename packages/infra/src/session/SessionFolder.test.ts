@@ -6,6 +6,7 @@ import {
   Screenshots,
   SessionStore,
   Sessions,
+  SummaryAgent,
   Transcriber,
 } from "@kladd/core";
 import {
@@ -73,6 +74,26 @@ const clipCapture = Layer.unwrap(
 );
 
 /**
+ * A summary agent that works, taking a moment as a real one does: writes `summary.md` into the
+ * folder, and a line to `summary-calls` there each time it starts.
+ */
+const summaryAgent = Layer.effect(
+  SummaryAgent,
+  Effect.map(FileSystem.FileSystem, (fs) =>
+    SummaryAgent.of({
+      summarize: (folder) =>
+        fs
+          .writeFileString(`${folder}/summary-calls`, "summarize\n", { flag: "a" })
+          .pipe(
+            Effect.andThen(Effect.sleep("50 millis")),
+            Effect.andThen(fs.writeFileString(`${folder}/summary.md`, "# Oppsummering\n")),
+            Effect.orDie,
+          ),
+    }),
+  ),
+);
+
+/**
  * Sessions, Clips and Screenshots with the real file store in `dataDir`: what Kladd writes into a
  * session folder.
  */
@@ -80,7 +101,13 @@ const kladdIn = (dataDir: string, transcriber: TranscriberLayer = TranscriberTes
   Sessions.layer.pipe(
     Layer.provide(LoggingOverlay.layer),
     Layer.provideMerge(Layer.mergeAll(Clips.layer, Screenshots.layer)),
-    Layer.provide([ScreenCaptureTest.granted, IdsTest, FocusTrackerTest(), AppAdaptersTest()]),
+    Layer.provide([
+      ScreenCaptureTest.granted,
+      IdsTest,
+      FocusTrackerTest(),
+      AppAdaptersTest(),
+      summaryAgent,
+    ]),
     Layer.provideMerge(
       Layer.mergeAll(SessionCaptureTest(), clipCapture, transcriber, OverlayWindowsTest),
     ),
@@ -371,21 +398,54 @@ describe("session folder", () => {
     }).pipe(Effect.provide(NodeServices.layer)),
   );
 
-  it.live("a finished folder, even of silence, is left alone on the next launch", () =>
+  it.live(
+    "a quit during the summary summarizes again at launch, but transcribes nothing again",
+    () =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const dataDir = yield* fs.makeTempDirectoryScoped();
+        const model = yield* ready;
+        // Kladd quits once the overview is written, while the summary agent is still at work.
+        const folder = yield* recordOnce(() => clip).pipe(
+          Effect.provide(kladdIn(dataDir, whisper(model, ""))),
+        );
+        yield* eventually(fs.readFileString(`${folder}/clips/001/transcript.jsonl`));
+        assert.isFalse(yield* fs.exists(`${folder}/summary.md`));
+
+        yield* Effect.gen(function* () {
+          const store = yield* SessionStore;
+          yield* eventually(store.finished(folder), (done) => done);
+          yield* Effect.sleep("100 millis");
+          assert.deepStrictEqual(yield* transcribed, []);
+        }).pipe(Effect.provide(kladdIn(dataDir, whisper(model, ""))));
+      }).pipe(Effect.provide(NodeServices.layer)),
+  );
+
+  it.live("a session past its end at launch is summarized once", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const dataDir = yield* fs.makeTempDirectoryScoped();
-      const model = yield* ready;
-      const folder = yield* recordOnce(() => clip).pipe(
-        Effect.provide(kladdIn(dataDir, whisper(model, ""))),
-      );
-      yield* eventually(fs.readFileString(`${folder}/clips/001/transcript.jsonl`));
+      const startedAt = DateTime.makeUnsafe(Date.now() - 24 * 60 * 60 * 1000);
+      const folder = yield* Effect.gen(function* () {
+        const store = yield* SessionStore;
+        const created = yield* store.create(
+          new Session({
+            id: SessionId.make("session-9"),
+            mode: "manual",
+            startedAt,
+            endedAt: null,
+            loggedAt: null,
+          }),
+        );
+        yield* store.createClip(created, { startedAt, stoppedAt: startedAt, language: null });
+        return created;
+      }).pipe(Effect.provide(kladdIn(dataDir)));
 
       yield* Effect.gen(function* () {
-        assert.isTrue(yield* (yield* SessionStore).finished(folder));
-        yield* Effect.sleep("100 millis");
-        assert.deepStrictEqual(yield* transcribed, []);
-      }).pipe(Effect.provide(kladdIn(dataDir, whisper(model, ""))));
+        yield* eventually(fs.exists(`${folder}/summary.md`), (written) => written);
+        yield* Effect.sleep("200 millis");
+        assert.strictEqual(yield* fs.readFileString(`${folder}/summary-calls`), "summarize\n");
+      }).pipe(Effect.provide(kladdIn(dataDir)));
     }).pipe(Effect.provide(NodeServices.layer)),
   );
 

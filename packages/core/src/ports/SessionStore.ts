@@ -40,7 +40,10 @@ export class SessionStore extends Context.Service<
     readonly remove: (folder: string) => Effect.Effect<void>;
     /** The folder `create` made for `id`, if it did. */
     readonly folder: (id: SessionId) => Effect.Effect<Option.Option<string>>;
-    /** Whether the folder has `overview.md` and a transcript for every clip with sound. */
+    /**
+     * Whether the folder has `overview.md`, a transcript for every clip with sound, and
+     * `summary.md` unless the session is logged: a log written without one needs none.
+     */
     readonly finished: (folder: string) => Effect.Effect<boolean>;
     /** Where the screenshot `id` goes as a PNG in the folder. Its directory exists once this succeeds. */
     readonly screenshotFile: (folder: string, id: ScreenshotId) => Effect.Effect<string>;

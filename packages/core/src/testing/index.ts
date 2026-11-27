@@ -11,6 +11,7 @@ import {
   FocusTrackingFailed,
   type ScreenCaptureFailed,
   type ScreenshotInfo,
+  type SummaryFailed,
   type TranscriptionFailed,
   ScreenCapturePermissionDenied,
   ScreenshotId,
@@ -34,7 +35,9 @@ import { OverlayWindows } from "../ports/OverlayWindows";
 import { ScreenCapture } from "../ports/ScreenCapture";
 import { SessionCapture } from "../ports/SessionCapture";
 import { SessionStore } from "../ports/SessionStore";
+import { SummaryAgent } from "../ports/SummaryAgent";
 import { Transcriber } from "../ports/Transcriber";
+import { VideoFrames } from "../ports/VideoFrames";
 
 const screenCaptureTest = (
   permission: ScreenCapturePermission,
@@ -398,4 +401,34 @@ export const OverlayWindowsTest = Layer.unwrap(
       Layer.succeed(OverlayWindowsLog, log),
     );
   }),
+);
+
+/** What SummaryAgentTest saw: every folder it was asked to summarize. Read it with `yield* SummaryAgentLog`. */
+export class SummaryAgentLog extends Context.Service<
+  SummaryAgentLog,
+  Ref.Ref<ReadonlyArray<string>>
+>()("kladd/core/testing/SummaryAgentLog") {}
+
+/** Writes no file. Given a SummaryFailed, every summarize fails with it after it is logged. */
+export const SummaryAgentTest = (failure?: SummaryFailed) =>
+  Layer.unwrap(
+    Effect.gen(function* () {
+      const log = yield* Ref.make<ReadonlyArray<string>>([]);
+      const agent = SummaryAgent.of({
+        summarize: (folder) =>
+          Ref.update(log, (folders) => [...folders, folder]).pipe(
+            Effect.andThen(failure === undefined ? Effect.void : Effect.fail(failure)),
+          ),
+      });
+      return Layer.mergeAll(
+        Layer.succeed(SummaryAgent, agent),
+        Layer.succeed(SummaryAgentLog, log),
+      );
+    }),
+  );
+
+/** Writes no file; every frame succeeds. */
+export const VideoFramesTest = Layer.succeed(
+  VideoFrames,
+  VideoFrames.of({ frameAt: () => Effect.void }),
 );
