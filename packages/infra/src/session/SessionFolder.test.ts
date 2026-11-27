@@ -6,6 +6,7 @@ import {
   Screenshots,
   SessionStore,
   Sessions,
+  SummaryAgent,
   Transcriber,
 } from "@kladd/core";
 import {
@@ -17,7 +18,6 @@ import {
   SessionCaptureLog,
   SessionCaptureTest,
   TranscriberLog,
-  SummaryAgentTest,
   TranscriberTest,
 } from "@kladd/core/testing";
 import {
@@ -73,6 +73,17 @@ const clipCapture = Layer.unwrap(
   }),
 );
 
+/** A summary agent that works: writes `summary.md` into the folder. */
+const summaryAgent = Layer.effect(
+  SummaryAgent,
+  Effect.map(FileSystem.FileSystem, (fs) =>
+    SummaryAgent.of({
+      summarize: (folder) =>
+        fs.writeFileString(`${folder}/summary.md`, "# Oppsummering\n").pipe(Effect.orDie),
+    }),
+  ),
+);
+
 /**
  * Sessions, Clips and Screenshots with the real file store in `dataDir`: what Kladd writes into a
  * session folder.
@@ -86,7 +97,7 @@ const kladdIn = (dataDir: string, transcriber: TranscriberLayer = TranscriberTes
       IdsTest,
       FocusTrackerTest(),
       AppAdaptersTest(),
-      SummaryAgentTest(),
+      summaryAgent,
     ]),
     Layer.provideMerge(
       Layer.mergeAll(SessionCaptureTest(), clipCapture, transcriber, OverlayWindowsTest),

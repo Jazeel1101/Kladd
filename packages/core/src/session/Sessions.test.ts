@@ -195,6 +195,25 @@ describe("Sessions", () => {
     }).pipe(Effect.provide(kladd())),
   );
 
+  it.effect("a logged session left unfinished gets its overview at launch, but no summary", () =>
+    Effect.gen(function* () {
+      yield* TestClock.adjust("1 second");
+      assert.isTrue(yield* (yield* SessionStore).finished("/sessions/old"));
+      assert.deepStrictEqual(yield* Ref.get(yield* SummaryAgentLog), []);
+    }).pipe(
+      Effect.provide(
+        kladd({
+          stored: [
+            stored("old", {
+              endedAt: DateTime.makeUnsafe(1000),
+              loggedAt: DateTime.makeUnsafe(2000),
+            }),
+          ],
+        }),
+      ),
+    ),
+  );
+
   it.effect("a failed summary still leaves the session ended and its overview written", () =>
     Effect.gen(function* () {
       const sessions = yield* Sessions;

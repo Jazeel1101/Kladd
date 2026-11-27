@@ -58,13 +58,13 @@ describe("deniedToolUse", () => {
           ["Edit", { file_path: `${scope.sessionDir}/summary.md` }],
           ["Write", { file_path: "overview.md" }],
           ["Write", { file_path: "../summary.md" }],
-          ["Bash", { command: "jq . session.json" }],
+          ["Bash", { command: "cat session.json" }],
           ["mcp__kladd__frame_at", { clip: "001", t: 2 }],
           ["WebFetch", { url: "https://example.com" }],
           ["NotebookEdit", { notebook_path: "x.ipynb" }],
           ["Read", "not an object"],
         ]),
-        [true, true, false, false, true, true, false, false, false],
+        [true, true, false, false, false, true, false, false, false],
       );
     }),
   );
@@ -79,15 +79,14 @@ describe("claudeOptions", () => {
     assert.deepStrictEqual(options.settingSources, []);
     assert.strictEqual(options.permissionPrompts, "none");
     assert.strictEqual(options.persistSession, false);
-    assert.deepStrictEqual(options.tools, ["Read", "Glob", "Grep", "Bash", "Write", "Edit"]);
+    assert.deepStrictEqual(options.tools, ["Read", "Glob", "Grep", "Write", "Edit"]);
   });
 
-  it("sandboxes Bash to the data folder with no network, and fails without a sandbox", () => {
+  it("sandboxes any command to the data folder with no network, and fails without a sandbox", () => {
     assert.deepStrictEqual(options.sandbox, {
       enabled: true,
       failIfUnavailable: true,
       allowUnsandboxedCommands: false,
-      autoAllowBashIfSandboxed: true,
       filesystem: {
         denyRead: ["/Users", "/Volumes"],
         allowRead: [scope.dataDir],

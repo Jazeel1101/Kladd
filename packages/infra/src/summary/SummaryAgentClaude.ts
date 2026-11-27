@@ -57,7 +57,7 @@ const inside = (dir: string, file: string) => file === dir || file.startsWith(`$
 /**
  * Why the agent may not make this tool call, or null when it may: it reads in `scope.dataDir`
  * only, and writes `summary.md` only. Kladd checks every call itself, so a wrong permission rule
- * can't open anything; the sandbox covers what Bash runs.
+ * can't open anything. It has no tool that runs commands.
  */
 export const deniedToolUse = (
   path: Path.Path,
@@ -65,7 +65,7 @@ export const deniedToolUse = (
   toolName: string,
   toolInput: unknown,
 ): string | null => {
-  if (toolName === "Bash" || toolName === frameTool) return null;
+  if (toolName === frameTool) return null;
   const input = Option.getOrUndefined(decodeToolInput(toolInput));
   if (input === undefined) return `Kladd could not read the input of ${toolName}.`;
   // Claude Code expands `~` itself, so a path starting with it is never relative to the folder.
@@ -121,7 +121,8 @@ export const claudeOptions = (
     skills: [],
     persistSession: false,
     maxTurns: 100,
-    tools: ["Read", "Glob", "Grep", "Bash", "Write", "Edit"],
+    // No Bash: a shell could read the whole system and write to temp folders.
+    tools: ["Read", "Glob", "Grep", "Write", "Edit"],
     allowedTools: [frameTool],
     disallowedTools: ["WebFetch", "WebSearch"],
     permissionMode: "dontAsk",
@@ -137,9 +138,8 @@ export const claudeOptions = (
       enabled: true,
       failIfUnavailable: true,
       allowUnsandboxedCommands: false,
-      autoAllowBashIfSandboxed: true,
       filesystem: {
-        // Every user's files and every other disk; the system Bash and jq run from stays open.
+        // Every user's files and every other disk, should any command run after all.
         denyRead: ["/Users", "/Volumes"],
         allowRead: [scope.dataDir],
         denyWrite: [scope.dataDir],

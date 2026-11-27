@@ -185,7 +185,9 @@ export const SessionStoreFile = Layer.effect(
     const finished = Effect.fn("SessionStoreFile.finished")(function* (folder: string) {
       return (
         (yield* fs.exists(path.join(folder, sessionFiles.overview))) &&
-        (yield* untranscribed(folder)).length === 0
+        (yield* untranscribed(folder)).length === 0 &&
+        ((yield* readInfo(folder)).loggedAt !== null ||
+          (yield* fs.exists(path.join(folder, sessionFiles.summary))))
       );
     }, Effect.orDie);
 

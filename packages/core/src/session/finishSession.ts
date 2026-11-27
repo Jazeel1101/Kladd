@@ -7,14 +7,16 @@ import { Clips } from "./Clips";
 /**
  * Derives the files of a session folder that are made once the session has ended: each clip's
  * `transcript.jsonl` (with its language in `clip.json`) when it has sound, then `overview.md`,
- * then `summary.md` from the summary agent. Reads only the raw files, so it can rebuild them at
+ * then `summary.md` from the summary agent unless the session is already logged. Reads only the raw files, so it can rebuild them at
  * any time. A failed transcription still writes `overview.md`, and a failed summary is logged:
  * the student writes their log without it.
  */
 export const finishSession = Effect.fn("finishSession")(function* (folder: string) {
   const store = yield* SessionStore;
   yield* (yield* Clips).transcribe(folder);
-  yield* store.writeOverview(folder, renderOverview(yield* store.read(folder)));
+  const input = yield* store.read(folder);
+  yield* store.writeOverview(folder, renderOverview(input));
+  if (input.session.loggedAt !== null) return;
   yield* (yield* SummaryAgent)
     .summarize(folder)
     .pipe(
