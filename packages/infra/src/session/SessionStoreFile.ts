@@ -191,11 +191,19 @@ export const SessionStoreFile = Layer.effect(
       );
     }, Effect.orDie);
 
-    const summary = Effect.fn("SessionStoreFile.summary")(function* (folder: string) {
-      const file = path.join(folder, sessionFiles.summary);
-      if (!(yield* fs.exists(file))) return Option.none<string>();
-      return Option.some(yield* fs.readFileString(file));
-    }, Effect.orDie);
+    const summary = Effect.fn("SessionStoreFile.summary")(
+      function* (folder: string) {
+        const file = path.join(folder, sessionFiles.summary);
+        if (!(yield* fs.exists(file))) return Option.none<string>();
+        return Option.some(yield* fs.readFileString(file));
+      },
+      Effect.catch((error) =>
+        // Unreadable is as good as missing: the overlay says the summary failed, and launch goes on.
+        Effect.logWarning("Could not read summary.md", error).pipe(
+          Effect.as(Option.none<string>()),
+        ),
+      ),
+    );
 
     const writeClip = Effect.fn("SessionStoreFile.writeClip")(function* (
       clip: string,

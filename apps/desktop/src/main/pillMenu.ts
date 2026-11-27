@@ -53,7 +53,7 @@ export const PillMenuLive = Layer.effect(
             : [
                 { label: "Log settings", click: run(logging.toggleSettings) },
                 {
-                  label: "Log assistant",
+                  label: "Summary",
                   type: "checkbox",
                   checked: overlayOpen,
                   click: run(logging.toggle),
@@ -65,7 +65,9 @@ export const PillMenuLive = Layer.effect(
         ...forState,
         { type: "separator" },
         // Opens it in any state: for trying app adapters in the app the user is in.
-        { label: "Show logging overlay", enabled: !overlayOpen, click: run(logging.open) },
+        overlayOpen
+          ? { label: "Hide logging overlay", click: run(logging.close) }
+          : { label: "Show logging overlay", click: run(logging.open) },
         { type: "separator" },
         { label: "Past sessions…", click: run(windows.show("expanded")) },
         { label: "Settings…", click: run(windows.show("settings")) },

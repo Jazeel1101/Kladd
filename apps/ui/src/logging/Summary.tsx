@@ -47,7 +47,7 @@ const Blocks = ({ blocks }: { readonly blocks: ReadonlyArray<Block> }) =>
         return (
           <pre
             key={i}
-            className="overflow-x-auto rounded-lg bg-black/30 px-3 py-2 font-mono text-[12px] leading-relaxed"
+            className="shrink-0 overflow-x-auto rounded-lg bg-black/30 px-3 py-2 font-mono text-[12px] leading-relaxed"
           >
             {block.text}
           </pre>
