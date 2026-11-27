@@ -4,7 +4,7 @@ import { Menu, type MenuItemConstructorOptions, app } from "electron";
 import { Context, Effect, Layer, Option, Stream } from "effect";
 import { PillActions, captureMode } from "./pillActions";
 
-/** The pill's native menu: what the pill's state allows, the capture mode, Settings, Quit. */
+/** The pill's native menu: what the pill's state allows, the capture mode, past sessions, Settings, Quit. */
 export class PillMenu extends Context.Service<PillMenu, { readonly open: Effect.Effect<void> }>()(
   "kladd/desktop/PillMenu",
 ) {}
@@ -56,6 +56,7 @@ export const PillMenuLive = Layer.effect(
         // Opens it in any state: for trying app adapters in the app the user is in.
         { label: "Show logging overlay", click: run(logging.open) },
         { type: "separator" },
+        { label: "Past sessions…", click: run(windows.show("expanded")) },
         { label: "Settings…", click: run(windows.show("settings")) },
         { label: "Quit Kladd", click: () => app.quit() },
       ]);

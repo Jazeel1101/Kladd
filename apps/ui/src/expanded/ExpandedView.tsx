@@ -65,7 +65,7 @@ const SessionRow = ({ past }: { readonly past: PastSession }) => {
   );
 };
 
-/** ExpandedView: the ended sessions, newest first, opened from the pill when no session is active. */
+/** ExpandedView: the ended sessions, newest first, opened from the pill menu. */
 export const ExpandedView = () => {
   const hideWindow = useAtomSet(hideWindowAtom);
   const result = useAtomValue(pastSessionsAtom);

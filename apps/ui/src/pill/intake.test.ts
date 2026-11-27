@@ -1,5 +1,5 @@
 import { assert, describe, it } from "@effect/vitest";
-import { screenshotSlot, trayRects } from "./intake";
+import { panelBeside, panelFromWall, screenshotSlot, trayRects } from "./intake";
 import { frameAt } from "./notchPlacement";
 
 const area = { left: 0, top: 0, right: 1440, bottom: 900 };
@@ -52,5 +52,23 @@ describe("trayRects", () => {
       shut: { x: 257, y: 215, width: 40, height: 130 },
       open: { x: 67, y: 215, width: 230, height: 130 },
     });
+  });
+});
+
+describe("settings panel", () => {
+  it("slides a floating pill's panel out toward the side with more of the screen", () => {
+    const panel = panelBeside(floating, area);
+    assert.strictEqual(panel.x, floating.box.left + floating.box.width);
+    assert.strictEqual(panel.y + panel.height / 2, floating.box.top + floating.box.height / 2);
+  });
+
+  it("pushes a docked pill off its wall by the panel's depth", () => {
+    const left = panelFromWall({ ...leftWall, wall: "left" });
+    assert.deepStrictEqual(left.push, { x: 300, y: 0 });
+    assert.deepStrictEqual(left.content, { x: 0, y: 150, width: 300, height: 260 });
+    const frame = frameAt({ x: 720, y: 877 }, "row", "bottom", area);
+    const bottom = panelFromWall({ ...frame, wall: "bottom" });
+    assert.deepStrictEqual(bottom.push, { x: 0, y: -300 });
+    assert.strictEqual(bottom.content.y + bottom.content.height, 560);
   });
 });

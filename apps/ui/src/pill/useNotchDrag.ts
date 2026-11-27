@@ -32,7 +32,7 @@ const damping = 22;
 const axes: ReadonlyArray<"x" | "y"> = ["x", "y"];
 
 /** The work area of the display the window is on, from the renderer's own `screen`. */
-const workArea = (): Area => {
+export const workArea = (): Area => {
   const { screen } = window;
   const left = "availLeft" in screen && typeof screen.availLeft === "number" ? screen.availLeft : 0;
   const top = "availTop" in screen && typeof screen.availTop === "number" ? screen.availTop : 0;
