@@ -16,15 +16,9 @@ export const pastSessionsAtom = KladdClient.runtime.atom(
   ),
 );
 
-/** When the clip recording now started (or null), updated on every start and stop. */
-export const clipAtom = KladdClient.runtime.atom(
-  Stream.unwrap(KladdClient.use((client) => Effect.succeed(client("WatchClip", undefined)))),
-);
-
 /** Main shows any error of these itself. Use each with `{ payload: undefined }`. */
 export const startSessionAtom = KladdClient.mutation("StartSession");
 export const endSessionAtom = KladdClient.mutation("EndSession");
 export const finishLoggingAtom = KladdClient.mutation("FinishLogging");
 export const takeScreenshotAtom = KladdClient.mutation("TakeScreenshot");
-export const toggleClipAtom = KladdClient.mutation("ToggleClip");
 export const openLoggingOverlayAtom = KladdClient.mutation("OpenLoggingOverlay");

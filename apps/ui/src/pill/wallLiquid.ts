@@ -1,5 +1,5 @@
 import type { NotchFrame, Point, Wall } from "./notchPlacement";
-import { attractRange, dropParts, pill } from "./notchShape";
+import { attractRange, dropParts } from "./notchShape";
 
 /**
  * The liquid that comes out of a wall belongs to the wall, not the pill. While the pill nears a wall
@@ -70,9 +70,13 @@ const live = (residue: Liquid["residue"], now: number) =>
 
 const wallShape = (liquid: Liquid, frame: NotchFrame, now: number): WallShape => ({
   wall: frame.drawWall,
-  path: dropParts({ gap: frame.gap, top: frame.along, shapeGap: shapeGap(liquid, frame, now) })
-    .wall,
-  mid: frame.along + pill.height / 2,
+  path: dropParts({
+    gap: frame.gap,
+    length: frame.length,
+    top: frame.along,
+    shapeGap: shapeGap(liquid, frame, now),
+  }).wall,
+  mid: frame.along + frame.length / 2,
   window: frame.window,
 });
 
