@@ -63,6 +63,8 @@ describe("settings panel", () => {
   it("slides a floating pill's panel out toward the side with more of the screen", () => {
     const panel = panelBeside(floating, area);
     assert.strictEqual(panel.x, floating.box.left + floating.box.width);
+    const { open } = trayRects(floating, panel);
+    assert.isAtMost(open.x + open.width, 560 - 34);
     assert.strictEqual(panel.y + panel.height / 2, floating.box.top + floating.box.height / 2);
   });
 

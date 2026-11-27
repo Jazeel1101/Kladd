@@ -106,13 +106,21 @@ export const panelFromWall = (frame: NotchFrame & { readonly wall: Wall }) => {
  */
 export const panelBeside = (frame: NotchFrame, area: Area): Rect => {
   const box = boxOf(frame);
-  const { width, height } = panelSize;
+  const side = pillSide(frame, area);
+  // No deeper than the room beside the pill, so the open tray stays inside the window.
+  const room = roomBeside(box, side);
+  const width =
+    side === "left" || side === "right" ? Math.min(panelSize.width, room.width) : panelSize.width;
+  const height =
+    side === "top" || side === "bottom"
+      ? Math.min(panelSize.height, room.height)
+      : panelSize.height;
   const near = edgeRoom + pad;
   const keep = (value: number, length: number) =>
     Math.min(Math.max(value, near), canvas.width - near - length);
   const across = { x: keep(box.x + box.width / 2 - width / 2, width), width, height };
   const along = { y: keep(box.y + box.height / 2 - height / 2, height), width, height };
-  switch (pillSide(frame, area)) {
+  switch (side) {
     case "left":
       return { ...along, x: box.x + box.width };
     case "right":

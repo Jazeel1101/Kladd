@@ -247,14 +247,14 @@ const SessionButtons = ({ session }: { readonly session: Session | null }) => {
 /**
  * The settings panel (src/pill/intake.ts) slides out when the chevron is clicked, and back when it
  * is clicked again: out of the wall, pushing a docked pill off it, or out of a floating pill as its
- * tray. It shuts at once when the pill is dragged, and slides shut when a screenshot comes in.
+ * tray. It slides shut when a screenshot comes in. The pill stays put while it is out: its drag
+ * would start from the wall, and would lose the panel it was grabbed by.
  */
-const useSettingsPanel = (moving: boolean, intaking: boolean) => {
+const useSettingsPanel = (intaking: boolean) => {
   const [still] = useState(() => window.matchMedia("(prefers-reduced-motion: reduce)").matches);
   const [panel, setPanel] = useState<"open" | "closing" | null>(null);
   const close = () => setPanel((now) => (now === "open" ? (still ? null : "closing") : now));
-  if (moving && panel !== null) setPanel(null);
-  else if (intaking && panel === "open") setPanel(still ? null : "closing");
+  if (intaking && panel === "open") setPanel(still ? null : "closing");
   return {
     panel,
     toggle: () => (panel === "open" ? close() : setPanel("open")),
@@ -278,7 +278,7 @@ export const RecordingPill = () => {
   const { box, drawWall, orientation } = frame;
 
   const intake = useScreenshotIntake(frame);
-  const settings = useSettingsPanel(moving, intake.landing !== null);
+  const settings = useSettingsPanel(intake.landing !== null);
   const fromWall =
     settings.panel !== null && frame.wall !== null
       ? panelFromWall({ ...frame, wall: frame.wall })
@@ -336,6 +336,7 @@ export const RecordingPill = () => {
         intake.closing && "closing",
       )}
       {...handlers}
+      {...(settings.panel === null ? {} : { onPointerDown: undefined })}
       onContextMenu={(event) => {
         event.preventDefault();
         openMenu({ payload: undefined });
